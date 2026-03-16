@@ -43,11 +43,19 @@ async function _loadUserPermissions(email) {
 
 // ---- Auth state change handler ----
 supabase.auth.onAuthStateChange(async function(event, session) {
+  // TOKEN_REFRESHED fires often (tab resume, interval) — just update user, don't re-init
   if (event === 'TOKEN_REFRESHED') {
     if (session) {
       currentUser = session.user;
       AppState.set('user', currentUser);
     }
+    return;
+  }
+
+  // SIGNED_IN when already signed in = redundant (e.g., tab resume). Skip if already initialized.
+  if (event === 'SIGNED_IN' && currentUser && currentUserPerms) {
+    currentUser = session.user;
+    AppState.set('user', currentUser);
     return;
   }
 

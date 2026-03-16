@@ -2837,20 +2837,110 @@ th .balance-zero { background: none; }
   padding: 12px;
 }
 
-/* ---- Transaction type badges ---- */
+/* ---- Transaction type badges (table rows) ---- */
 .tx-type-cost {
-  color: var(--text-primary);
-  font-weight: 500;
+  background: var(--danger-light);
+  color: #dc2626;
 }
 
-.tx-type-payment {
-  color: var(--success);
-  font-weight: 500;
+.tx-type-client {
+  background: var(--success-light);
+  color: #059669;
+}
+
+.tx-type-office {
+  background: var(--warning-light);
+  color: #b45309;
 }
 
 .tx-type-offset {
-  color: var(--info);
+  background: var(--info-light);
+  color: #4338ca;
+}
+
+/* ---- Transaction type badges (dropdown) ---- */
+.tx-badge-client {
+  background: var(--success-light);
+  color: #059669;
+}
+.tx-badge-office {
+  background: var(--warning-light);
+  color: #b45309;
+}
+
+/* ---- Payment type badges ---- */
+.pay-type-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 0.82rem;
   font-weight: 500;
+  white-space: nowrap;
+}
+.pay-type-cash {
+  background: var(--success-light);
+  color: #059669;
+}
+.pay-type-transfer {
+  background: var(--warning-light);
+  color: #b45309;
+}
+.pay-type-check {
+  background: #dbeafe;
+  color: #2563eb;
+}
+/* ---- Color Select (custom dropdown) ---- */
+.cs-dropdown {
+  position: relative;
+}
+.cs-dropdown-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  width: 100%;
+  text-align: right;
+  min-height: 38px;
+}
+.cs-placeholder {
+  color: var(--text-muted);
+}
+.cs-arrow {
+  font-size: 10px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.cs-dropdown-popup {
+  display: none;
+  position: absolute;
+  z-index: 200;
+  top: calc(100% + 4px);
+  right: 0;
+  left: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  padding: 4px;
+  animation: fadeSlideIn 0.15s ease-out;
+}
+.cs-dropdown-popup.open {
+  display: block;
+}
+.cs-dropdown-item {
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.cs-dropdown-item:hover {
+  background: var(--bg);
+}
+/* Validation error: highlight button when hidden input has error */
+input.form-input-error + .cs-dropdown .cs-dropdown-btn {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px rgba(239,68,68,0.15);
 }
 
 /* ---- Running balance summary ---- */
@@ -2906,4 +2996,14 @@ th .balance-zero { background: none; }
 .list-search input {
   width: 100%;
   font-size: 13px;
+}
+
+/* ---- Row action buttons ---- */
+.row-actions {
+  white-space: nowrap;
+}
+.row-actions .btn {
+  margin: 0 2px;
+  font-size: 11px;
+  padding: 2px 8px;
 }

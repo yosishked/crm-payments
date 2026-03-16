@@ -51,11 +51,48 @@ var FormHelpers = (function() {
         break;
 
       case 'number':
-        html += '<input class="form-input" type="number" id="' + id + '" name="' + config.name + '" value="' + UI.escapeHtml(String(value)) + '" placeholder="' + UI.escapeHtml(config.placeholder || '') + '"' + reqAttr + '>';
+        var maxAttr = config.max !== undefined ? ' max="' + config.max + '"' : '';
+        var minAttr = config.min !== undefined ? ' min="' + config.min + '"' : '';
+        var inputMode = config.noSpinner ? ' inputmode="numeric" pattern="[0-9]*"' : '';
+        var numType = config.noSpinner ? 'text' : 'number';
+        html += '<input class="form-input" type="' + numType + '" id="' + id + '" name="' + config.name + '" value="' + UI.escapeHtml(String(value)) + '" placeholder="' + UI.escapeHtml(config.placeholder || '') + '"' + reqAttr + maxAttr + minAttr + inputMode + ' data-parse="number">';
         break;
 
       case 'date':
         html += '<input class="form-input" type="date" id="' + id + '" name="' + config.name + '" value="' + UI.escapeHtml(String(value)) + '"' + reqAttr + '>';
+        break;
+
+      case 'color_select':
+        // Custom styled dropdown with colored badges
+        var csOpts = config.options || [];
+        var csColorMap = config.colorMap || {};
+        var csSelectedLabel = '-- בחר --';
+        var csSelectedClass = '';
+        for (var ci = 0; ci < csOpts.length; ci++) {
+          if (String(csOpts[ci].value) === String(value)) {
+            csSelectedLabel = csOpts[ci].label;
+            csSelectedClass = csColorMap[csOpts[ci].value] || '';
+          }
+        }
+        html += '<input type="hidden" id="' + id + '" name="' + config.name + '" value="' + UI.escapeHtml(String(value)) + '"' + reqAttr + '>';
+        html += '<div class="cs-dropdown" data-field="' + id + '">';
+        html += '<button type="button" class="cs-dropdown-btn form-input">';
+        if (value && csSelectedClass) {
+          html += '<span class="pay-type-badge ' + csSelectedClass + '">' + UI.escapeHtml(csSelectedLabel) + '</span>';
+        } else {
+          html += '<span class="cs-placeholder">-- בחר --</span>';
+        }
+        html += '<span class="cs-arrow">&#9660;</span>';
+        html += '</button>';
+        html += '<div class="cs-dropdown-popup">';
+        html += '<div class="cs-dropdown-item" data-value=""><span class="cs-placeholder">-- בחר --</span></div>';
+        for (var ck = 0; ck < csOpts.length; ck++) {
+          var csCls = csColorMap[csOpts[ck].value] || '';
+          html += '<div class="cs-dropdown-item" data-value="' + UI.escapeHtml(csOpts[ck].value) + '">';
+          html += '<span class="pay-type-badge ' + csCls + '">' + UI.escapeHtml(csOpts[ck].label) + '</span>';
+          html += '</div>';
+        }
+        html += '</div></div>';
         break;
 
       case 'checkbox_group':
@@ -88,7 +125,7 @@ var FormHelpers = (function() {
       var name = el.getAttribute('name');
       var val = el.value;
 
-      if (el.type === 'number') {
+      if (el.type === 'number' || el.getAttribute('data-parse') === 'number') {
         result[name] = val === '' ? null : parseFloat(val);
       } else if (el.tagName === 'SELECT' && (val === 'true' || val === 'false')) {
         // Boolean select
@@ -136,6 +173,71 @@ var FormHelpers = (function() {
       UI.toast('נא למלא שדות חובה', 'danger');
     }
     return valid;
+  }
+
+  // ---- Color Select Dropdown Init ----
+  function _initColorSelects(container) {
+    var dropdowns = container.querySelectorAll('.cs-dropdown');
+    for (var d = 0; d < dropdowns.length; d++) {
+      (function(dd) {
+        var fieldId = dd.getAttribute('data-field');
+        var hidden = container.querySelector('#' + fieldId);
+        var btn = dd.querySelector('.cs-dropdown-btn');
+        var popup = dd.querySelector('.cs-dropdown-popup');
+        var items = dd.querySelectorAll('.cs-dropdown-item');
+
+        btn.addEventListener('click', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          var allPopups = container.querySelectorAll('.cs-dropdown-popup.open');
+          for (var p = 0; p < allPopups.length; p++) {
+            if (allPopups[p] !== popup) allPopups[p].classList.remove('open');
+          }
+          popup.classList.toggle('open');
+        });
+
+        for (var i = 0; i < items.length; i++) {
+          (function(item) {
+            item.addEventListener('click', function(e) {
+              e.stopPropagation();
+              var val = item.getAttribute('data-value');
+              hidden.value = val;
+              // Dispatch change event so external listeners can react
+              hidden.dispatchEvent(new Event('change', { bubbles: true }));
+              // Update button display using DOM cloning (safe, no innerHTML)
+              while (btn.firstChild) btn.removeChild(btn.firstChild);
+              var badge = item.querySelector('.pay-type-badge');
+              if (badge) {
+                btn.appendChild(badge.cloneNode(true));
+              } else {
+                var ph = document.createElement('span');
+                ph.className = 'cs-placeholder';
+                ph.textContent = '-- בחר --';
+                btn.appendChild(ph);
+              }
+              var arrow = document.createElement('span');
+              arrow.className = 'cs-arrow';
+              arrow.textContent = '\u25BC';
+              btn.appendChild(arrow);
+              popup.classList.remove('open');
+              if (val) hidden.classList.remove('form-input-error');
+            });
+          })(items[i]);
+        }
+      })(dropdowns[d]);
+    }
+
+    // Close popups on click outside — scoped to this container's overlay
+    // Using a named handler on the overlay so it's automatically cleaned up when overlay is removed
+    var overlay = container.closest('.edit-modal-overlay') || container;
+    overlay.addEventListener('click', function(e) {
+      if (!e.target.closest('.cs-dropdown')) {
+        var openPopups = container.querySelectorAll('.cs-dropdown-popup.open');
+        for (var p = 0; p < openPopups.length; p++) {
+          openPopups[p].classList.remove('open');
+        }
+      }
+    });
   }
 
   // ---- Edit Modal ----
@@ -190,6 +292,9 @@ var FormHelpers = (function() {
       overlay.classList.add('edit-modal-visible');
     });
 
+    // Initialize color_select dropdowns
+    _initColorSelects(overlay);
+
     function closeModal() {
       overlay.classList.remove('edit-modal-visible');
       setTimeout(function() {
@@ -215,10 +320,16 @@ var FormHelpers = (function() {
 
       try {
         var formData = collectFormData(body);
+        var result;
         if (config.onSave) {
-          await config.onSave(formData);
+          result = await config.onSave(formData);
         }
-        closeModal();
+        if (result === 'KEEP_OPEN') {
+          saveBtn.disabled = false;
+          saveBtn.textContent = 'שמור';
+        } else {
+          closeModal();
+        }
       } catch (err) {
         console.error('Save error:', err);
         UI.toast('שגיאה בשמירה', 'danger');

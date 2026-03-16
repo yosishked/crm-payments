@@ -17,10 +17,29 @@ function _isMobile() {
   return window.innerWidth <= 768;
 }
 
+// Debounce timer for handleRoute — prevents multiple rapid calls
+// (e.g., returning from background tab triggers auth events + hashchange)
+var _routeTimer = null;
+var _lastRouteHash = null;
+
 window.handleRoute = function() {
   if (!AppState.get('user')) return;
 
   var hash = window.location.hash.slice(1) || '';
+
+  // If same hash and already rendered, debounce to prevent redundant loads
+  if (hash === _lastRouteHash && _routeTimer) return;
+
+  clearTimeout(_routeTimer);
+  _routeTimer = setTimeout(function() {
+    _routeTimer = null;
+    _executeRoute(hash);
+  }, hash !== _lastRouteHash ? 0 : 300);
+  // Immediate for new hash (user clicked), debounced for same hash (auth re-fire)
+};
+
+function _executeRoute(hash) {
+  _lastRouteHash = hash;
   var params = {};
 
   var matchedRoute = null;
@@ -75,7 +94,7 @@ window.handleRoute = function() {
       initFn(params);
     }
   }
-};
+}
 
 function _highlightSelectedEditor(editorId) {
   document.querySelectorAll('.editor-card').forEach(function(el) {
@@ -99,3 +118,14 @@ function _updateSidebarActive(hash) {
 }
 
 window.addEventListener('hashchange', window.handleRoute);
+
+// When returning from background tab — do a clean single refresh
+document.addEventListener('visibilitychange', function() {
+  if (document.visibilityState === 'visible' && AppState.get('user')) {
+    // Small delay to let Supabase SDK handle token refresh first
+    setTimeout(function() {
+      _lastRouteHash = null; // force fresh route
+      window.handleRoute();
+    }, 1000);
+  }
+});

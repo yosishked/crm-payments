@@ -150,8 +150,49 @@ var API = (function() {
   }
 
   // ---- Delete editor transaction ----
+  // If it's a קיזוז transaction, also delete the paired transaction + offset record
   async function deleteEditorTransaction(id) {
     if (typeof Realtime !== 'undefined' && Realtime.markLocalSave) Realtime.markLocalSave();
+
+    // Check if this transaction is part of an offset pair
+    var { data: offsets } = await supabase
+      .from('crm_editor_offsets')
+      .select('id, source_transaction_id, target_transaction_id')
+      .or('source_transaction_id.eq.' + id + ',target_transaction_id.eq.' + id);
+
+    if (offsets && offsets.length > 0) {
+      var offset = offsets[0];
+      var txIdsToDelete = [offset.source_transaction_id, offset.target_transaction_id].filter(Boolean);
+
+      // Delete the offset record first
+      var { error: offsetErr } = await supabase
+        .from('crm_editor_offsets')
+        .delete()
+        .eq('id', offset.id);
+
+      if (offsetErr) {
+        console.error('Error deleting offset:', offsetErr);
+        UI.toast('שגיאה במחיקת קיזוז', 'danger');
+        return false;
+      }
+
+      // Delete both paired transactions
+      var { error: txErr } = await supabase
+        .from('crm_editor_transactions')
+        .delete()
+        .in('id', txIdsToDelete);
+
+      if (txErr) {
+        console.error('Error deleting offset transactions:', txErr);
+        UI.toast('הקיזוז נמחק אבל חלק מהתנועות נכשלו', 'warning');
+        return false;
+      }
+
+      UI.toast('קיזוז נמחק (2 תנועות)', 'success');
+      return true;
+    }
+
+    // Regular (non-offset) transaction deletion
     var { error } = await supabase
       .from('crm_editor_transactions')
       .delete()
@@ -165,6 +206,26 @@ var API = (function() {
 
     UI.toast('תנועה נמחקה', 'success');
     return true;
+  }
+
+  // ---- Update editor transaction ----
+  async function updateEditorTransaction(id, updates) {
+    if (typeof Realtime !== 'undefined' && Realtime.markLocalSave) Realtime.markLocalSave();
+    var { data, error } = await supabase
+      .from('crm_editor_transactions')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error updating editor transaction:', error);
+      UI.toast('שגיאה בעדכון תנועה', 'danger');
+      return null;
+    }
+
+    UI.toast('תנועה עודכנה', 'success');
+    return data;
   }
 
   // ---- Create editor offset (+ 2 paired transactions) ----
@@ -263,6 +324,7 @@ var API = (function() {
     fetchEditorOffsets: fetchEditorOffsets,
     createEditorTransaction: createEditorTransaction,
     deleteEditorTransaction: deleteEditorTransaction,
+    updateEditorTransaction: updateEditorTransaction,
     createEditorOffset: createEditorOffset,
     updateRecord: updateRecord,
     invalidateCache: invalidateCache,

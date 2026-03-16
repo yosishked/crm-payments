@@ -7,6 +7,8 @@ var Realtime = (function() {
   var _channel = null;
   var _lastLocalSave = 0;
   var COOLDOWN = 3000; // ignore realtime events for 3s after local save
+  var _refreshTimer = null; // debounce for handleChange
+  var _isRefreshing = false; // prevent concurrent refreshes
 
   function init() {
     if (_channel) return;
@@ -37,20 +39,39 @@ var Realtime = (function() {
     // Don't disrupt user mid-edit
     if (_isUserEditing()) return;
 
-    var hash = window.location.hash.slice(1) || '';
+    // Don't stack refreshes — if already refreshing, skip
+    if (_isRefreshing) return;
 
-    if (hash.startsWith('editors/')) {
-      // Viewing editor detail — reload it
-      var editorId = hash.split('/')[1];
-      if (typeof window.initEditorDetail === 'function') {
-        window.initEditorDetail({ id: editorId });
+    // Debounce: if multiple events arrive quickly, only refresh once
+    if (_refreshTimer) clearTimeout(_refreshTimer);
+    _refreshTimer = setTimeout(function() {
+      _refreshTimer = null;
+      _doRefresh();
+    }, 500);
+  }
+
+  async function _doRefresh() {
+    if (_isRefreshing) return;
+    _isRefreshing = true;
+
+    try {
+      var hash = window.location.hash.slice(1) || '';
+
+      if (hash.startsWith('editors/')) {
+        var editorId = hash.split('/')[1];
+        if (typeof window.initEditorDetail === 'function') {
+          await window.initEditorDetail({ id: editorId });
+        }
+      } else {
+        if (typeof window.initEditorsList === 'function') {
+          await window.initEditorsList();
+        }
       }
-    } else {
-      // Viewing editors list — reload sidebar balances
-      if (typeof window.initEditorsList === 'function') {
-        window.initEditorsList();
-      }
+    } catch(e) {
+      console.warn('Realtime refresh error:', e);
     }
+
+    _isRefreshing = false;
   }
 
   function _isUserEditing() {
@@ -63,6 +84,10 @@ var Realtime = (function() {
   }
 
   function destroy() {
+    if (_refreshTimer) {
+      clearTimeout(_refreshTimer);
+      _refreshTimer = null;
+    }
     if (_channel) {
       supabase.removeChannel(_channel);
       _channel = null;

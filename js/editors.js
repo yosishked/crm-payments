@@ -8,19 +8,27 @@ var Editors = (function() {
 
   var _currentEditorId = null;
   var _expandedLeadId = null; // which lead row is expanded to show transactions
+  var _detailVersion = 0;     // increments on each detail load — stale loads abort on render
+  var _listVersion = 0;       // increments on each list load
 
   // ============================================
   // EDITORS LIST (sidebar)
   // ============================================
 
   window.initEditorsList = async function(params) {
+    var myVersion = ++_listVersion;
+
     var container = document.getElementById('editors-view');
     if (!container) return;
 
+    // Note: innerHTML used with escaped values only (UI.escapeHtml)
     container.innerHTML = _renderListHeader() + UI.spinner();
 
     var editors = await API.fetchEditors();
+    if (myVersion !== _listVersion) return; // stale — newer load started
+
     var allTransactions = await _fetchAllEditorTransactions(editors);
+    if (myVersion !== _listVersion) return; // stale
 
     AppState.set('editors', editors);
 
@@ -114,7 +122,6 @@ var Editors = (function() {
 
   function _renderEditorCard(editor, balance) {
     var name = (editor.first_name || '') + ' ' + (editor.last_name || '');
-    var style = editor.editing_style || '';
     var isActive = editor.id === _currentEditorId ? ' editor-card-active' : '';
 
     var balanceClass = 'balance-zero';
@@ -132,7 +139,6 @@ var Editors = (function() {
         '<div class="editor-card-name">' + UI.escapeHtml(name.trim()) + '</div>' +
         '<div class="editor-card-balance ' + balanceClass + '">' + UI.escapeHtml(balanceLabel) + '</div>' +
       '</div>' +
-      (style ? '<div class="editor-card-style">' + UI.escapeHtml(style) + '</div>' : '') +
     '</div>';
   }
 
@@ -150,12 +156,17 @@ var Editors = (function() {
   // ============================================
 
   async function _loadEditorDetail(editorId) {
+    var myVersion = ++_detailVersion; // mark this load — if a newer one starts, this one aborts
+
     var container = document.getElementById('editor-detail-view');
     if (!container) return;
 
+    // Note: spinner is safe static HTML
     container.innerHTML = UI.spinner();
 
     var editors = AppState.get('editors') || await API.fetchEditors();
+    if (myVersion !== _detailVersion) return; // stale — user navigated away
+
     var editor = editors.find(function(e) { return e.id === editorId; });
     if (!editor) {
       container.innerHTML = UI.emptyState('עורכת לא נמצאה');
@@ -166,9 +177,9 @@ var Editors = (function() {
       API.fetchEditorLeads(editorId),
       API.fetchEditorTransactions(editorId)
     ]);
+    if (myVersion !== _detailVersion) return; // stale
 
     // Also fetch leads that have transactions but aren't in editor_leads
-    // (e.g. transaction created but editor_id not yet set on lead)
     var leadIds = leads.map(function(l) { return l.id; });
     var missingIds = [];
     transactions.forEach(function(tx) {
@@ -181,6 +192,7 @@ var Editors = (function() {
         .from('crm_leads')
         .select('id, groom_first_name, bride_first_name, event_date, editor_id, editing_cost, stage')
         .in('id', missingIds);
+      if (myVersion !== _detailVersion) return; // stale
       if (extraLeads && extraLeads.length) {
         leads = leads.concat(extraLeads);
       }
@@ -235,7 +247,6 @@ var Editors = (function() {
     html += '<div class="detail-card">';
     html += '<div class="detail-section-title">' + UI.escapeHtml(name.trim()) + '</div>';
     html += '<div class="detail-grid">';
-    html += '<div class="detail-item"><div class="detail-label">' + UI.escapeHtml('סגנון עריכה') + '</div><div class="detail-value">' + UI.escapeHtml(editor.editing_style || '-') + '</div></div>';
     html += '<div class="detail-item"><div class="detail-label">' + UI.escapeHtml('טלפון') + '</div><div class="detail-value">' + UI.formatPhone(editor.phone) + '</div></div>';
     html += '<div class="detail-item"><div class="detail-label">' + UI.escapeHtml('מייל') + '</div><div class="detail-value">' + UI.escapeHtml(editor.email || '-') + '</div></div>';
     html += '<div class="detail-item"><div class="detail-label">' + UI.escapeHtml('פרטי בנק') + '</div><div class="detail-value">' + UI.escapeHtml(editor.editor_bank_details || '-') + '</div></div>';
@@ -247,15 +258,7 @@ var Editors = (function() {
     html += '<div class="detail-item"><div class="detail-label">' + UI.escapeHtml('יתרה כוללת') + '</div><div class="detail-value"><strong class="' + balClass + '">' + UI.escapeHtml(balText) + '</strong></div></div>';
     html += '</div></div>';
 
-    // ---- Actions ----
     var eid = UI.escapeHtml(editor.id);
-    html += '<div class="detail-card">';
-    html += '<div class="detail-section-title">' + UI.escapeHtml('פעולות') + '</div>';
-    html += '<div class="detail-actions">';
-    html += '<button class="btn btn-primary btn-sm" onclick="Editors.openAddCostModal(\'' + eid + '\')">+ ' + UI.escapeHtml('עלות עריכה') + '</button>';
-    html += '<button class="btn btn-secondary btn-sm" onclick="Editors.openAddPaymentModal(\'' + eid + '\')">+ ' + UI.escapeHtml('תשלום') + '</button>';
-    html += '<button class="btn btn-secondary btn-sm" onclick="Editors.openOffsetModal(\'' + eid + '\')">' + UI.escapeHtml('+ קיזוז') + '</button>';
-    html += '</div></div>';
 
     // ---- Events table ----
     html += '<div class="detail-card">';
@@ -274,6 +277,7 @@ var Editors = (function() {
         '<th>' + UI.escapeHtml('קיזוזים') + '</th>' +
         '<th>' + UI.escapeHtml('יתרה') + '</th>' +
         '<th>' + UI.escapeHtml('סטטוס') + '</th>' +
+        '<th>' + UI.escapeHtml('פעולות') + '</th>' +
       '</tr></thead><tbody>';
 
       var runningBalance = 0;
@@ -301,7 +305,8 @@ var Editors = (function() {
         var isExpanded = _expandedLeadId === lead.id;
         var expandClass = isExpanded ? ' row-expanded' : '';
 
-        html += '<tr class="clickable-row' + expandClass + '" onclick="Editors.toggleLeadTransactions(\'' + eid + '\', \'' + UI.escapeHtml(lead.id) + '\')">' +
+        var leadIdEsc = UI.escapeHtml(lead.id);
+        html += '<tr class="clickable-row' + expandClass + '" onclick="Editors.toggleLeadTransactions(\'' + eid + '\', \'' + leadIdEsc + '\')">' +
           '<td><strong>' + UI.escapeHtml(couple) + '</strong></td>' +
           '<td>' + UI.formatDate(lead.event_date) + '</td>' +
           '<td>' + UI.formatCurrency(row.cost) + '</td>' +
@@ -310,11 +315,15 @@ var Editors = (function() {
           '<td>' + UI.formatCurrency(row.offsets) + '</td>' +
           '<td class="' + (row.balance > 0 ? 'balance-owed' : row.balance < 0 ? 'balance-credit' : '') + '"><strong>' + UI.formatCurrency(row.balance) + '</strong></td>' +
           '<td>' + statusBadge + '</td>' +
+          '<td class="row-actions">' +
+            '<button class="btn btn-primary btn-xs" onclick="event.stopPropagation(); Editors.openAddPaymentForLead(\'' + eid + '\', \'' + leadIdEsc + '\')" title="תשלום">+ תשלום</button> ' +
+            '<button class="btn btn-secondary btn-xs" onclick="event.stopPropagation(); Editors.openOffsetForLead(\'' + eid + '\', \'' + leadIdEsc + '\')" title="קיזוז">+ קיזוז</button>' +
+          '</td>' +
         '</tr>';
 
         // Expanded transactions row
         if (isExpanded) {
-          html += '<tr class="transactions-detail-row"><td colspan="8">';
+          html += '<tr class="transactions-detail-row"><td colspan="9">';
           html += _renderLeadTransactions(editor.id, lead, row.transactions);
           html += '</td></tr>';
         }
@@ -347,9 +356,6 @@ var Editors = (function() {
     var html = '<div class="lead-transactions-detail">';
     html += '<div class="lead-tx-header">';
     html += '<strong>' + UI.escapeHtml('תנועות: ' + couple) + '</strong>';
-    html += '<div>';
-    html += '<button class="btn btn-primary btn-xs" onclick="event.stopPropagation(); Editors.openAddPaymentForLead(\'' + eid + '\', \'' + lid + '\')">' + UI.escapeHtml('+ תשלום') + '</button>';
-    html += '</div>';
     html += '</div>';
 
     if (transactions.length === 0) {
@@ -362,15 +368,25 @@ var Editors = (function() {
         var tx = transactions[i];
         var typeClass = tx.transaction_type === 'עלות עריכה' ? 'tx-type-cost'
           : tx.transaction_type === 'קיזוז' ? 'tx-type-offset'
-          : 'tx-type-payment';
+          : tx.transaction_type === 'העברת תשלום מהלקוח לעורכת' ? 'tx-type-client'
+          : 'tx-type-office';
+
+        var payClass = tx.payment_type === 'מזומן' ? 'pay-type-cash'
+          : tx.payment_type === 'העברה בנקאית' ? 'pay-type-transfer'
+          : tx.payment_type === 'צ׳ק' ? 'pay-type-check'
+          : '';
+        var payHtml = tx.payment_type
+          ? '<span class="pay-type-badge ' + payClass + '">' + UI.escapeHtml(tx.payment_type) + '</span>'
+          : '-';
 
         html += '<tr>' +
           '<td>' + UI.formatDate(tx.effective_date) + '</td>' +
-          '<td><span class="' + typeClass + '">' + UI.escapeHtml(tx.transaction_type || '-') + '</span></td>' +
+          '<td><span class="pay-type-badge ' + typeClass + '">' + UI.escapeHtml(tx.transaction_type || '-') + '</span></td>' +
           '<td>' + UI.formatCurrency(tx.amount) + '</td>' +
-          '<td>' + UI.escapeHtml(tx.payment_type || '-') + '</td>' +
+          '<td>' + payHtml + '</td>' +
           '<td>' + UI.escapeHtml(tx.notes || '-') + '</td>' +
-          '<td>' + (isAdmin() ? '<button class="btn-icon btn-icon-danger" onclick="event.stopPropagation(); Editors.deleteTransaction(\'' + UI.escapeHtml(tx.id) + '\', \'' + eid + '\')" title="מחק">&#128465;</button>' : '') + '</td>' +
+          '<td>' + (isAdmin() ? '<button class="btn-icon" onclick="event.stopPropagation(); Editors.editTransaction(\'' + UI.escapeHtml(tx.id) + '\', \'' + eid + '\', \'' + lid + '\')" title="ערוך">&#9998;</button>' +
+            '<button class="btn-icon btn-icon-danger" onclick="event.stopPropagation(); Editors.deleteTransaction(\'' + UI.escapeHtml(tx.id) + '\', \'' + eid + '\')" title="מחק">&#128465;</button>' : '') + '</td>' +
         '</tr>';
       }
 
@@ -394,122 +410,6 @@ var Editors = (function() {
   // MODALS
   // ============================================
 
-  // ---- Add Cost (עלות עריכה) ----
-  function openAddCostModal(editorId) {
-    API.fetchLeadsForPayments().then(function(allLeads) {
-      // Filter leads without editor or with this editor
-      var available = allLeads.filter(function(l) {
-        return !l.editor_id || l.editor_id === editorId;
-      });
-
-      var leadOptions = available.map(function(l) {
-        var couple = (l.groom_first_name || '') + ' & ' + (l.bride_first_name || '');
-        var date = l.event_date ? ' (' + UI.formatDate(l.event_date) + ')' : '';
-        return { value: l.id, label: couple + date };
-      });
-
-      FormHelpers.openEditModal({
-        title: 'הוספת עלות עריכה',
-        screen: 'payments',
-        width: '500px',
-        sections: [{
-          title: 'פרטים',
-          fields: [
-            { name: 'lead_id', label: 'אירוע', type: 'select', options: leadOptions, required: true },
-            { name: 'amount', label: 'עלות עריכה', type: 'number', required: true },
-            { name: 'effective_date', label: 'תאריך', type: 'date' },
-            { name: 'notes', label: 'הערות', type: 'textarea' }
-          ]
-        }],
-        onSave: async function(formData) {
-          var lead = available.find(function(l) { return l.id === formData.lead_id; });
-
-          // If lead doesn't have editor_id set, assign it
-          if (lead && !lead.editor_id) {
-            await API.updateRecord('crm_leads', lead.id, { editor_id: editorId });
-            API.invalidateCache('leads');
-          }
-
-          await API.createEditorTransaction({
-            editor_id: editorId,
-            lead_id: formData.lead_id,
-            transaction_type: 'עלות עריכה',
-            amount: formData.amount,
-            effective_date: formData.effective_date || new Date().toISOString().split('T')[0],
-            notes: formData.notes
-          });
-
-          await _loadEditorDetail(editorId);
-          await window.initEditorsList();
-        }
-      });
-
-      // Auto-fill amount from lead's editing_cost when lead is selected
-      setTimeout(function() {
-        var leadSelect = document.getElementById('ff-lead_id');
-        var amountInput = document.getElementById('ff-amount');
-        if (leadSelect && amountInput) {
-          leadSelect.addEventListener('change', function() {
-            var selectedLead = available.find(function(l) { return l.id === leadSelect.value; });
-            if (selectedLead && selectedLead.editing_cost && !amountInput.value) {
-              amountInput.value = selectedLead.editing_cost;
-            }
-          });
-        }
-      }, 100);
-    });
-  }
-
-  // ---- Add Payment (תשלום) ----
-  function openAddPaymentModal(editorId) {
-    API.fetchEditorLeads(editorId).then(function(leads) {
-      var leadOptions = leads.map(function(l) {
-        var couple = (l.groom_first_name || '') + ' & ' + (l.bride_first_name || '');
-        var date = l.event_date ? ' (' + UI.formatDate(l.event_date) + ')' : '';
-        return { value: l.id, label: couple + date };
-      });
-
-      FormHelpers.openEditModal({
-        title: 'הוספת תשלום לעורכת',
-        screen: 'payments',
-        width: '500px',
-        sections: [{
-          title: 'פרטים',
-          fields: [
-            { name: 'lead_id', label: 'אירוע', type: 'select', options: leadOptions, required: true },
-            { name: 'transaction_type', label: 'סוג תשלום', type: 'select', required: true, options: [
-              { value: 'העברת תשלום מהלקוח לעורכת', label: 'מהלקוח לעורכת' },
-              { value: 'העברת תשלום מהמשרד לעורכת', label: 'מהמשרד לעורכת' }
-            ]},
-            { name: 'amount', label: 'סכום', type: 'number', required: true },
-            { name: 'payment_type', label: 'אמצעי תשלום', type: 'select', options: [
-              { value: 'העברה בנקאית', label: 'העברה בנקאית' },
-              { value: 'מזומן', label: 'מזומן' },
-              { value: 'צ׳ק', label: 'צ׳ק' },
-              { value: 'מעורבב', label: 'מעורבב' }
-            ]},
-            { name: 'effective_date', label: 'תאריך', type: 'date' },
-            { name: 'notes', label: 'הערות', type: 'textarea' }
-          ]
-        }],
-        onSave: async function(formData) {
-          await API.createEditorTransaction({
-            editor_id: editorId,
-            lead_id: formData.lead_id,
-            transaction_type: formData.transaction_type,
-            amount: formData.amount,
-            payment_type: formData.payment_type,
-            effective_date: formData.effective_date || new Date().toISOString().split('T')[0],
-            notes: formData.notes
-          });
-
-          await _loadEditorDetail(editorId);
-          await window.initEditorsList();
-        }
-      });
-    });
-  }
-
   // ---- Add Payment for specific lead ----
   function openAddPaymentForLead(editorId, leadId) {
     FormHelpers.openEditModal({
@@ -519,17 +419,16 @@ var Editors = (function() {
       sections: [{
         title: 'פרטים',
         fields: [
-          { name: 'transaction_type', label: 'סוג תשלום', type: 'select', required: true, options: [
+          { name: 'transaction_type', label: 'סוג תשלום', type: 'color_select', required: true, options: [
             { value: 'העברת תשלום מהלקוח לעורכת', label: 'מהלקוח לעורכת' },
             { value: 'העברת תשלום מהמשרד לעורכת', label: 'מהמשרד לעורכת' }
-          ]},
-          { name: 'amount', label: 'סכום', type: 'number', required: true },
-          { name: 'payment_type', label: 'אמצעי תשלום', type: 'select', options: [
+          ], colorMap: { 'העברת תשלום מהלקוח לעורכת': 'tx-badge-client', 'העברת תשלום מהמשרד לעורכת': 'tx-badge-office' }},
+          { name: 'amount', label: 'סכום', type: 'number', required: true, noSpinner: true },
+          { name: 'payment_type', label: 'אמצעי תשלום', type: 'color_select', required: true, options: [
             { value: 'העברה בנקאית', label: 'העברה בנקאית' },
             { value: 'מזומן', label: 'מזומן' },
-            { value: 'צ׳ק', label: 'צ׳ק' },
-            { value: 'מעורבב', label: 'מעורבב' }
-          ]},
+            { value: 'צ׳ק', label: 'צ׳ק' }
+          ], colorMap: { 'העברה בנקאית': 'pay-type-transfer', 'מזומן': 'pay-type-cash', 'צ׳ק': 'pay-type-check' }},
           { name: 'effective_date', label: 'תאריך', type: 'date' },
           { name: 'notes', label: 'הערות', type: 'textarea' }
         ]
@@ -552,8 +451,8 @@ var Editors = (function() {
     });
   }
 
-  // ---- Offset Modal ----
-  function openOffsetModal(editorId) {
+  // ---- Offset for specific lead ----
+  function openOffsetForLead(editorId, leadId) {
     API.fetchEditorLeads(editorId).then(async function(leads) {
       var transactions = await API.fetchEditorTransactions(editorId);
 
@@ -566,51 +465,103 @@ var Editors = (function() {
         else leadBalances[tx.lead_id].paid += (tx.amount || 0);
       });
 
-      // Source: leads with credit (balance < 0, meaning overpaid)
-      var sourceOptions = [];
-      var targetOptions = [];
-      Object.keys(leadBalances).forEach(function(lid) {
-        var b = leadBalances[lid];
-        var balance = b.cost - b.paid;
-        var couple = (b.lead.groom_first_name || '') + ' & ' + (b.lead.bride_first_name || '');
-        var label = couple + ' (יתרה: ' + UI.formatCurrency(balance) + ')';
-        if (balance < 0) {
-          sourceOptions.push({ value: lid, label: label });
-        }
-        if (balance > 0) {
-          targetOptions.push({ value: lid, label: label });
-        }
-      });
-
-      if (sourceOptions.length === 0 || targetOptions.length === 0) {
-        UI.toast('אין אירועים מתאימים לקיזוז (צריך אירוע עם זיכוי ואירוע עם חוב)', 'warning');
+      var currentLead = leadBalances[leadId];
+      if (!currentLead) {
+        UI.toast('אירוע לא נמצא', 'warning');
         return;
       }
 
+      var currentBalance = currentLead.cost - currentLead.paid;
+      var currentCouple = (currentLead.lead.groom_first_name || '') + ' & ' + (currentLead.lead.bride_first_name || '');
+
+      if (currentBalance === 0) {
+        UI.toast('האירוע של ' + currentCouple + ' מסולק — אין מה לקזז', 'warning');
+        return;
+      }
+
+      // If this lead has credit (balance < 0) — it's the source, pick a target with debt
+      // If this lead has debt (balance > 0) — it's the target, pick a source with credit
+      var isSource = currentBalance < 0;
+      var otherOptions = [];
+
+      Object.keys(leadBalances).forEach(function(lid) {
+        if (lid === leadId) return;
+        var b = leadBalances[lid];
+        var bal = b.cost - b.paid;
+        var couple = (b.lead.groom_first_name || '') + ' & ' + (b.lead.bride_first_name || '');
+        var label = couple + ' (יתרה: ' + UI.formatCurrency(bal) + ')';
+        if (isSource && bal > 0) {
+          otherOptions.push({ value: lid, label: label });
+        } else if (!isSource && bal < 0) {
+          otherOptions.push({ value: lid, label: label });
+        }
+      });
+
+      if (otherOptions.length === 0) {
+        var msg = isSource
+          ? 'אין אירועים עם חוב לקיזוז מול הזיכוי של ' + currentCouple
+          : 'אין אירועים עם זיכוי לקיזוז מול החוב של ' + currentCouple;
+        UI.toast(msg, 'warning');
+        return;
+      }
+
+      var fieldLabel = isSource ? 'אירוע יעד (עם חוב)' : 'אירוע מקור (עם זיכוי)';
+
+      // Max offset = min(abs(current balance), abs(other balance))
+      var currentAbsBalance = Math.abs(currentBalance);
+
+      // Build a map of other lead balances for quick lookup
+      var otherBalanceMap = {};
+      Object.keys(leadBalances).forEach(function(lid) {
+        var b = leadBalances[lid];
+        otherBalanceMap[lid] = Math.abs(b.cost - b.paid);
+      });
+
+      // Initial max from first option
+      var firstOtherAbs = otherOptions.length > 0 ? (otherBalanceMap[otherOptions[0].value] || 0) : 0;
+      var initialMax = Math.min(currentAbsBalance, firstOtherAbs);
+
+      // Build colorMap for other_lead_id options
+      var otherColorMap = {};
+      otherOptions.forEach(function(opt) {
+        var bal = leadBalances[opt.value] ? (leadBalances[opt.value].cost - leadBalances[opt.value].paid) : 0;
+        otherColorMap[opt.value] = bal > 0 ? 'tx-type-cost' : 'tx-type-client';
+      });
+
       FormHelpers.openEditModal({
-        title: 'יצירת קיזוז',
+        title: 'קיזוז — ' + currentCouple,
         screen: 'payments',
         width: '500px',
         sections: [{
           title: 'פרטים',
           fields: [
-            { name: 'source_lead_id', label: 'אירוע מקור (עם זיכוי)', type: 'select', options: sourceOptions, required: true },
-            { name: 'target_lead_id', label: 'אירוע יעד (עם חוב)', type: 'select', options: targetOptions, required: true },
-            { name: 'amount', label: 'סכום קיזוז', type: 'number', required: true },
+            { name: 'other_lead_id', label: fieldLabel, type: 'color_select', options: otherOptions, required: true, colorMap: otherColorMap },
+            { name: 'amount', label: 'סכום קיזוז (מקס׳ ' + UI.formatCurrency(initialMax) + ')', type: 'number', required: true, max: initialMax, noSpinner: true },
             { name: 'offset_date', label: 'תאריך', type: 'date' },
             { name: 'notes', label: 'הערות', type: 'textarea' }
           ]
         }],
+        data: { amount: initialMax },
         onSave: async function(formData) {
-          var sourceLead = leads.find(function(l) { return l.id === formData.source_lead_id; });
-          var targetLead = leads.find(function(l) { return l.id === formData.target_lead_id; });
+          // Validate max amount
+          var otherAbs = otherBalanceMap[formData.other_lead_id] || 0;
+          var maxAllowed = Math.min(currentAbsBalance, otherAbs);
+          if (formData.amount > maxAllowed) {
+            UI.toast('סכום קיזוז מקסימלי: ' + UI.formatCurrency(maxAllowed), 'warning');
+            return 'KEEP_OPEN';
+          }
+
+          var sourceLid = isSource ? leadId : formData.other_lead_id;
+          var targetLid = isSource ? formData.other_lead_id : leadId;
+          var sourceLead = leads.find(function(l) { return l.id === sourceLid; });
+          var targetLead = leads.find(function(l) { return l.id === targetLid; });
           var sourceCouple = sourceLead ? (sourceLead.groom_first_name || '') + ' & ' + (sourceLead.bride_first_name || '') : '';
           var targetCouple = targetLead ? (targetLead.groom_first_name || '') + ' & ' + (targetLead.bride_first_name || '') : '';
 
           await API.createEditorOffset({
             editor_id: editorId,
-            source_lead_id: formData.source_lead_id,
-            target_lead_id: formData.target_lead_id,
+            source_lead_id: sourceLid,
+            target_lead_id: targetLid,
             amount: formData.amount,
             offset_date: formData.offset_date,
             notes: formData.notes,
@@ -618,18 +569,165 @@ var Editors = (function() {
             target_couple_name: targetCouple
           });
 
+          _expandedLeadId = leadId;
           await _loadEditorDetail(editorId);
           await window.initEditorsList();
         }
       });
+
+      // Update max + default value when other lead selection changes
+      setTimeout(function() {
+        var otherSelect = document.getElementById('ff-other_lead_id');
+        var amountInput = document.getElementById('ff-amount');
+        var amountGroup = amountInput ? amountInput.closest('.form-group') : null;
+        if (otherSelect && amountInput) {
+          otherSelect.addEventListener('change', function() {
+            var otherAbs = otherBalanceMap[otherSelect.value] || 0;
+            var newMax = Math.min(currentAbsBalance, otherAbs);
+            amountInput.max = newMax;
+            amountInput.value = newMax;
+            var labelEl = amountGroup ? amountGroup.querySelector('label') : null;
+            if (labelEl) {
+              labelEl.textContent = 'סכום קיזוז (מקס׳ ' + UI.formatCurrency(newMax) + ')';
+            }
+          });
+        }
+      }, 100);
+    });
+  }
+
+  // ---- Edit transaction ----
+  async function editTransaction(txId, editorId, leadId) {
+    // Fetch the transaction to pre-fill the form
+    var { data: tx, error } = await supabase
+      .from('crm_editor_transactions')
+      .select('*')
+      .eq('id', txId)
+      .single();
+
+    if (error || !tx) {
+      UI.toast('שגיאה בטעינת תנועה', 'danger');
+      return;
+    }
+
+    var isOffset = tx.transaction_type === 'קיזוז';
+    var isCost = tx.transaction_type === 'עלות עריכה';
+
+    // Build data object for pre-filling
+    var prefillData = {
+      transaction_type: tx.transaction_type,
+      amount: Math.abs(tx.amount),
+      payment_type: tx.payment_type || '',
+      effective_date: tx.effective_date || '',
+      notes: tx.notes || ''
+    };
+
+    var fields = [];
+
+    if (!isCost && !isOffset) {
+      fields.push({
+        name: 'transaction_type', label: 'סוג תשלום', type: 'color_select', required: true,
+        options: [
+          { value: 'העברת תשלום מהלקוח לעורכת', label: 'מהלקוח לעורכת' },
+          { value: 'העברת תשלום מהמשרד לעורכת', label: 'מהמשרד לעורכת' }
+        ],
+        colorMap: { 'העברת תשלום מהלקוח לעורכת': 'tx-badge-client', 'העברת תשלום מהמשרד לעורכת': 'tx-badge-office' }
+      });
+    }
+
+    fields.push({ name: 'amount', label: 'סכום', type: 'number', required: true, noSpinner: true });
+
+    if (!isOffset) {
+      fields.push({
+        name: 'payment_type', label: 'אמצעי תשלום', type: 'color_select', required: true,
+        options: [
+          { value: 'העברה בנקאית', label: 'העברה בנקאית' },
+          { value: 'מזומן', label: 'מזומן' },
+          { value: 'צ׳ק', label: 'צ׳ק' }
+        ],
+        colorMap: { 'העברה בנקאית': 'pay-type-transfer', 'מזומן': 'pay-type-cash', 'צ׳ק': 'pay-type-check' }
+      });
+    }
+
+    fields.push({ name: 'effective_date', label: 'תאריך', type: 'date' });
+    fields.push({ name: 'notes', label: 'הערות', type: 'textarea' });
+
+    var title = isCost ? 'עריכת עלות עריכה' : isOffset ? 'עריכת קיזוז' : 'עריכת תשלום';
+
+    FormHelpers.openEditModal({
+      title: title,
+      screen: 'payments',
+      width: '500px',
+      data: prefillData,
+      sections: [{ title: 'פרטים', fields: fields }],
+      onSave: async function(formData) {
+        var updates = {
+          amount: isOffset ? (tx.amount < 0 ? -Math.abs(formData.amount) : Math.abs(formData.amount)) : formData.amount,
+          effective_date: formData.effective_date || tx.effective_date,
+          notes: formData.notes || null
+        };
+
+        if (!isCost && !isOffset) {
+          updates.transaction_type = formData.transaction_type;
+          updates.payment_type = formData.payment_type || null;
+        }
+        if (isCost) {
+          updates.payment_type = tx.payment_type;
+        }
+
+        await API.updateEditorTransaction(txId, updates);
+
+        // If editing an offset, also update the paired transaction amount
+        if (isOffset) {
+          var { data: offsets } = await supabase
+            .from('crm_editor_offsets')
+            .select('id, source_transaction_id, target_transaction_id')
+            .or('source_transaction_id.eq.' + txId + ',target_transaction_id.eq.' + txId);
+
+          if (offsets && offsets.length > 0) {
+            var offset = offsets[0];
+            var pairedTxId = offset.source_transaction_id === txId ? offset.target_transaction_id : offset.source_transaction_id;
+            if (pairedTxId) {
+              var pairedAmount = tx.amount < 0 ? Math.abs(formData.amount) : -Math.abs(formData.amount);
+              await API.updateEditorTransaction(pairedTxId, {
+                amount: pairedAmount,
+                effective_date: formData.effective_date || tx.effective_date,
+                notes: formData.notes || null
+              });
+            }
+            // Update offset record amount + date
+            await supabase
+              .from('crm_editor_offsets')
+              .update({
+                amount: Math.abs(formData.amount),
+                offset_date: formData.effective_date || tx.effective_date
+              })
+              .eq('id', offset.id);
+          }
+        }
+
+        _expandedLeadId = leadId;
+        await _loadEditorDetail(editorId);
+        await window.initEditorsList();
+      }
     });
   }
 
   // ---- Delete transaction ----
   async function deleteTransaction(txId, editorId) {
+    // Check if this is an offset to show appropriate message
+    var { data: offsets } = await supabase
+      .from('crm_editor_offsets')
+      .select('id')
+      .or('source_transaction_id.eq.' + txId + ',target_transaction_id.eq.' + txId);
+
+    var isOffset = offsets && offsets.length > 0;
+    var title = isOffset ? 'מחיקת קיזוז' : 'מחיקת תנועה';
+    var message = isOffset ? 'האם למחוק את הקיזוז? (2 תנועות יימחקו)' : 'האם למחוק את התנועה?';
+
     FormHelpers.openDeleteConfirm({
-      title: 'מחיקת תנועה',
-      message: 'האם למחוק את התנועה?',
+      title: title,
+      message: message,
       onConfirm: async function() {
         await API.deleteEditorTransaction(txId);
         await _loadEditorDetail(editorId);
@@ -645,10 +743,9 @@ var Editors = (function() {
   return {
     filterList: filterList,
     toggleLeadTransactions: toggleLeadTransactions,
-    openAddCostModal: openAddCostModal,
-    openAddPaymentModal: openAddPaymentModal,
     openAddPaymentForLead: openAddPaymentForLead,
-    openOffsetModal: openOffsetModal,
+    openOffsetForLead: openOffsetForLead,
+    editTransaction: editTransaction,
     deleteTransaction: deleteTransaction,
   };
 })();
