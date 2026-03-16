@@ -1,0 +1,10 @@
+# SQL migrations (run manually in Supabase)
+sql/
+
+# OS files
+.DS_Store
+
+# Editor files
+.vscode/
+*.swp
+*.swo

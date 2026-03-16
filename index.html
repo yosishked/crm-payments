@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ניהול תשלומים</title>
+  <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+  <!-- ===================== Auth Screen ===================== -->
+  <div id="auth-view" class="auth-view">
+    <div class="auth-card">
+      <div class="auth-logo">💰</div>
+      <h1 class="auth-title">ניהול תשלומים</h1>
+      <p class="auth-subtitle">מערכת תשלומים לעורכות</p>
+      <button id="google-sign-in-btn" class="btn btn-google">
+        <svg class="google-icon" viewBox="0 0 24 24" width="20" height="20">
+          <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
+          <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+          <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+          <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+        </svg>
+        התחבר עם Google
+      </button>
+    </div>
+  </div>
+
+  <!-- ===================== App Shell ===================== -->
+  <div id="app-shell" class="app-shell" hidden>
+
+    <!-- Sidebar -->
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-header">
+        <span class="sidebar-logo">💰</span>
+        <span class="sidebar-title">תשלומים</span>
+      </div>
+
+      <nav class="sidebar-nav">
+        <a class="nav-item active" data-route="editors" href="#editors">
+          <svg class="nav-icon" viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" fill="currentColor"/></svg>
+          <span class="nav-label">עורכות</span>
+        </a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="user-info">
+          <img id="user-photo" class="user-avatar" src="" alt="" hidden>
+          <div style="display:flex;flex-direction:column;gap:2px">
+            <span id="user-name" class="user-name"></span>
+            <span id="user-role" style="font-size:11px;color:var(--text-secondary);"></span>
+          </div>
+        </div>
+        <button id="sign-out-btn" class="btn-sign-out" title="התנתק">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z" fill="currentColor"/></svg>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <div class="views-container split-view">
+        <div id="editors-list-panel" class="split-panel split-panel-list">
+          <div id="editors-view" class="crm-view"></div>
+        </div>
+        <div id="editors-detail-panel" class="split-panel split-panel-detail">
+          <div id="editor-detail-view" class="crm-view"></div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Mobile Bottom Nav -->
+    <nav class="mobile-nav">
+      <a class="mobile-nav-item active" data-route="editors" href="#editors">
+        <svg viewBox="0 0 24 24" width="22" height="22"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5z" fill="currentColor"/></svg>
+        <span>עורכות</span>
+      </a>
+    </nav>
+  </div>
+
+  <!-- Toast -->
+  <div id="crm-toast" class="crm-toast" hidden></div>
+
+  <!-- Scripts -->
+  <script src="js/supabase-config.js"></script>
+  <script src="js/state.js"></script>
+  <script src="js/ui-components.js"></script>
+  <script src="js/router.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/form-helpers.js"></script>
+  <script src="js/editors.js"></script>
+  <script src="js/auth.js"></script>
+
+</body>
+</html>
