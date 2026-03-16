@@ -361,7 +361,7 @@ var Editors = (function() {
     if (transactions.length === 0) {
       html += '<p class="empty-note">' + UI.escapeHtml('אין תנועות') + '</p>';
     } else {
-      html += '<table class="data-table data-table-sm">';
+      html += '<div class="responsive-table-wrap"><table class="data-table data-table-sm">';
       html += '<thead><tr><th>' + UI.escapeHtml('תאריך') + '</th><th>' + UI.escapeHtml('סוג') + '</th><th>' + UI.escapeHtml('סכום') + '</th><th>' + UI.escapeHtml('אמצעי תשלום') + '</th><th>' + UI.escapeHtml('הערות') + '</th><th></th></tr></thead><tbody>';
 
       for (var i = 0; i < transactions.length; i++) {
@@ -390,7 +390,7 @@ var Editors = (function() {
         '</tr>';
       }
 
-      html += '</tbody></table>';
+      html += '</tbody></table></div>';
     }
 
     html += '</div>';
@@ -434,7 +434,8 @@ var Editors = (function() {
         ]
       }],
       onSave: async function(formData) {
-        await API.createEditorTransaction({
+        Realtime.markLocalSave();
+        var editorTx = await API.createEditorTransaction({
           editor_id: editorId,
           lead_id: leadId,
           transaction_type: formData.transaction_type,
@@ -443,6 +444,18 @@ var Editors = (function() {
           effective_date: formData.effective_date || new Date().toISOString().split('T')[0],
           notes: formData.notes
         });
+
+        // If "from client to editor" — also create linked client transaction
+        if (formData.transaction_type === 'העברת תשלום מהלקוח לעורכת' && editorTx) {
+          var clientTx = await API.createClientTransaction({
+            lead_id: leadId,
+            amount: formData.amount,
+            payment_method: formData.payment_type,
+            source: 'client_to_editor',
+            notes: formData.notes || null,
+            linked_editor_transaction_id: editorTx.id
+          });
+        }
 
         _expandedLeadId = leadId;
         await _loadEditorDetail(editorId);
@@ -677,6 +690,23 @@ var Editors = (function() {
 
         await API.updateEditorTransaction(txId, updates);
 
+        // If linked to a client transaction, update it too
+        if (tx.transaction_type === 'העברת תשלום מהלקוח לעורכת') {
+          var { data: linkedClientTx } = await supabase
+            .from('crm_client_transactions')
+            .select('id')
+            .eq('linked_editor_transaction_id', txId)
+            .maybeSingle();
+
+          if (linkedClientTx) {
+            await API.updateClientTransaction(linkedClientTx.id, {
+              amount: formData.amount,
+              payment_method: formData.payment_type || null,
+              notes: formData.notes || null
+            });
+          }
+        }
+
         // If editing an offset, also update the paired transaction amount
         if (isOffset) {
           var { data: offsets } = await supabase
@@ -721,14 +751,31 @@ var Editors = (function() {
       .select('id')
       .or('source_transaction_id.eq.' + txId + ',target_transaction_id.eq.' + txId);
 
+    // Check if linked to a client transaction
+    var { data: linkedClientTx } = await supabase
+      .from('crm_client_transactions')
+      .select('id')
+      .eq('linked_editor_transaction_id', txId)
+      .maybeSingle();
+
     var isOffset = offsets && offsets.length > 0;
+    var isLinked = !!linkedClientTx;
     var title = isOffset ? 'מחיקת קיזוז' : 'מחיקת תנועה';
-    var message = isOffset ? 'האם למחוק את הקיזוז? (2 תנועות יימחקו)' : 'האם למחוק את התנועה?';
+    var message = isOffset ? 'האם למחוק את הקיזוז? (2 תנועות יימחקו)'
+      : isLinked ? 'האם למחוק את התנועה? (גם התשלום המקושר בלקוחות יימחק)'
+      : 'האם למחוק את התנועה?';
 
     FormHelpers.openDeleteConfirm({
       title: title,
       message: message,
       onConfirm: async function() {
+        Realtime.markLocalSave();
+
+        // Delete linked client transaction first (clear FK before deleting editor tx)
+        if (isLinked) {
+          await API.deleteClientTransaction(linkedClientTx.id);
+        }
+
         await API.deleteEditorTransaction(txId);
         await _loadEditorDetail(editorId);
         await window.initEditorsList();

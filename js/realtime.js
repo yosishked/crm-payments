@@ -1,6 +1,7 @@
 // ===========================================
 // Realtime - CRM Payments
 // Supabase Realtime subscriptions for live updates
+// Supports: editors, clients, photographers
 // ===========================================
 
 var Realtime = (function() {
@@ -19,7 +20,32 @@ var Realtime = (function() {
         schema: 'public',
         table: 'crm_editor_transactions'
       }, function(payload) {
-        _handleChange(payload);
+        _handleChange('editors');
+      })
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'crm_client_transactions'
+      }, function(payload) {
+        _handleChange('clients');
+      })
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'crm_event_logs'
+      }, function(payload) {
+        // event_logs affect both clients (overtime prices) and photographers (paid amounts)
+        _handleChange('clients');
+        _handleChange('photographers');
+      })
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'crm_leads'
+      }, function(payload) {
+        // leads affect client prices (package_extras, discount, etc.) and photographer assignments
+        _handleChange('clients');
+        _handleChange('photographers');
       })
       .subscribe(function(status) {
         if (status === 'SUBSCRIBED') {
@@ -32,7 +58,7 @@ var Realtime = (function() {
     _lastLocalSave = Date.now();
   }
 
-  function _handleChange(payload) {
+  function _handleChange(section) {
     // Skip if this is likely our own change
     if (Date.now() - _lastLocalSave < COOLDOWN) return;
 
@@ -55,6 +81,12 @@ var Realtime = (function() {
     _isRefreshing = true;
 
     try {
+      // Invalidate caches so we fetch fresh data
+      API.invalidateCache();
+      AppState.set('clientLeads', null);
+      AppState.set('clientEventLogs', null);
+      AppState.set('clientTeamMap', null);
+
       var hash = window.location.hash.slice(1) || '';
 
       if (hash.startsWith('editors/')) {
@@ -62,9 +94,33 @@ var Realtime = (function() {
         if (typeof window.initEditorDetail === 'function') {
           await window.initEditorDetail({ id: editorId });
         }
-      } else {
-        if (typeof window.initEditorsList === 'function') {
+      } else if (hash === 'editors' || hash === '') {
+        // Only refresh editors list if we're on that page
+        if (hash === 'editors' && typeof window.initEditorsList === 'function') {
           await window.initEditorsList();
+        }
+      } else if (hash.startsWith('clients/')) {
+        var leadId = hash.split('/')[1];
+        if (typeof window.initClientDetail === 'function') {
+          await window.initClientDetail({ id: leadId });
+        }
+      } else if (hash === 'clients') {
+        if (typeof window.initClientsList === 'function') {
+          await window.initClientsList();
+        }
+      } else if (hash.startsWith('photographers/')) {
+        var photographerId = hash.split('/')[1];
+        if (typeof window.initPhotographerDetail === 'function') {
+          await window.initPhotographerDetail({ id: photographerId });
+        }
+      } else if (hash === 'photographers') {
+        if (typeof window.initPhotographersList === 'function') {
+          await window.initPhotographersList();
+        }
+      } else {
+        // Default: refresh current view
+        if (typeof window.handleRoute === 'function') {
+          window.handleRoute();
         }
       }
     } catch(e) {

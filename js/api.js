@@ -26,7 +26,10 @@ var API = (function() {
     }
   }
 
-  // ---- Fetch editors (team members with is_editor = true) ----
+  // ==================================
+  // EDITORS
+  // ==================================
+
   async function fetchEditors() {
     var cached = _getCached('editors');
     if (cached) return cached;
@@ -46,7 +49,6 @@ var API = (function() {
     return data || [];
   }
 
-  // ---- Fetch all leads with signed contracts (for editor assignment) ----
   async function fetchLeadsForPayments() {
     var cached = _getCached('leads');
     if (cached) return cached;
@@ -65,7 +67,6 @@ var API = (function() {
     return data || [];
   }
 
-  // ---- Fetch leads assigned to a specific editor ----
   async function fetchEditorLeads(editorId) {
     var { data, error } = await supabase
       .from('crm_leads')
@@ -81,7 +82,6 @@ var API = (function() {
     return data || [];
   }
 
-  // ---- Fetch editor transactions for a specific editor ----
   async function fetchEditorTransactions(editorId) {
     var { data, error } = await supabase
       .from('crm_editor_transactions')
@@ -97,7 +97,6 @@ var API = (function() {
     return data || [];
   }
 
-  // ---- Fetch editor transactions for a specific editor + lead ----
   async function fetchEditorLeadTransactions(editorId, leadId) {
     var { data, error } = await supabase
       .from('crm_editor_transactions')
@@ -114,7 +113,6 @@ var API = (function() {
     return data || [];
   }
 
-  // ---- Fetch editor offsets for a specific editor ----
   async function fetchEditorOffsets(editorId) {
     var { data, error } = await supabase
       .from('crm_editor_offsets')
@@ -130,7 +128,6 @@ var API = (function() {
     return data || [];
   }
 
-  // ---- Create editor transaction ----
   async function createEditorTransaction(record) {
     if (typeof Realtime !== 'undefined' && Realtime.markLocalSave) Realtime.markLocalSave();
     var { data, error } = await supabase
@@ -149,12 +146,9 @@ var API = (function() {
     return data;
   }
 
-  // ---- Delete editor transaction ----
-  // If it's a קיזוז transaction, also delete the paired transaction + offset record
   async function deleteEditorTransaction(id) {
     if (typeof Realtime !== 'undefined' && Realtime.markLocalSave) Realtime.markLocalSave();
 
-    // Check if this transaction is part of an offset pair
     var { data: offsets } = await supabase
       .from('crm_editor_offsets')
       .select('id, source_transaction_id, target_transaction_id')
@@ -164,7 +158,6 @@ var API = (function() {
       var offset = offsets[0];
       var txIdsToDelete = [offset.source_transaction_id, offset.target_transaction_id].filter(Boolean);
 
-      // Delete the offset record first
       var { error: offsetErr } = await supabase
         .from('crm_editor_offsets')
         .delete()
@@ -176,7 +169,6 @@ var API = (function() {
         return false;
       }
 
-      // Delete both paired transactions
       var { error: txErr } = await supabase
         .from('crm_editor_transactions')
         .delete()
@@ -192,7 +184,6 @@ var API = (function() {
       return true;
     }
 
-    // Regular (non-offset) transaction deletion
     var { error } = await supabase
       .from('crm_editor_transactions')
       .delete()
@@ -208,7 +199,6 @@ var API = (function() {
     return true;
   }
 
-  // ---- Update editor transaction ----
   async function updateEditorTransaction(id, updates) {
     if (typeof Realtime !== 'undefined' && Realtime.markLocalSave) Realtime.markLocalSave();
     var { data, error } = await supabase
@@ -228,9 +218,7 @@ var API = (function() {
     return data;
   }
 
-  // ---- Create editor offset (+ 2 paired transactions) ----
   async function createEditorOffset(offset) {
-    // Create the offset record
     var { data: offsetData, error: offsetErr } = await supabase
       .from('crm_editor_offsets')
       .insert({
@@ -250,12 +238,11 @@ var API = (function() {
       return null;
     }
 
-    // Create two paired transactions
     var sourceTx = {
       editor_id: offset.editor_id,
       lead_id: offset.source_lead_id,
       transaction_type: 'קיזוז',
-      amount: -Math.abs(offset.amount), // negative on source (reducing credit)
+      amount: -Math.abs(offset.amount),
       effective_date: offset.offset_date || new Date().toISOString().split('T')[0],
       payment_type: 'קיזוז',
       notes: 'קיזוז ל: ' + (offset.target_couple_name || '')
@@ -265,7 +252,7 @@ var API = (function() {
       editor_id: offset.editor_id,
       lead_id: offset.target_lead_id,
       transaction_type: 'קיזוז',
-      amount: Math.abs(offset.amount), // positive on target (applying credit)
+      amount: Math.abs(offset.amount),
       effective_date: offset.offset_date || new Date().toISOString().split('T')[0],
       payment_type: 'קיזוז',
       notes: 'קיזוז מ: ' + (offset.source_couple_name || '')
@@ -282,7 +269,6 @@ var API = (function() {
       return offsetData;
     }
 
-    // Update offset with transaction IDs
     if (txData && txData.length === 2) {
       await supabase
         .from('crm_editor_offsets')
@@ -297,8 +283,235 @@ var API = (function() {
     return offsetData;
   }
 
-  // ---- Update record (generic) ----
+  // ==================================
+  // CLIENTS
+  // ==================================
+
+  var _clientLeadFields = 'id, groom_first_name, bride_first_name, groom_phone, bride_phone, event_date, stage, ' +
+    'package_price, second_photographer_price, package_extras, discount, ' +
+    'overtime_price, second_overtime_price, night_shooting_price, ' +
+    'mezuva_hour1_price, mezuva_hour2_price, mezuva_hour3_price, ' +
+    'editing_cost, editor_id, main_photographer_id, second_photographer_id, assistant_id';
+
+  async function fetchClientLeads() {
+    var cached = _getCached('client_leads');
+    if (cached) return cached;
+
+    var { data, error } = await supabase
+      .from('crm_leads')
+      .select(_clientLeadFields)
+      .eq('stage', 'חוזה נחתם')
+      .order('event_date', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching client leads:', error);
+      return [];
+    }
+
+    _setCache('client_leads', data || []);
+    return data || [];
+  }
+
+  async function fetchClientTransactions(leadId) {
+    var { data, error } = await supabase
+      .from('crm_client_transactions')
+      .select('*')
+      .eq('lead_id', leadId)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching client transactions:', error);
+      return [];
+    }
+
+    return data || [];
+  }
+
+  async function fetchAllClientTransactions(leadIds) {
+    if (!leadIds || leadIds.length === 0) return {};
+
+    // Fetch all transactions (no .in() filter — avoids PostgREST UUID issues)
+    var { data, error } = await supabase
+      .from('crm_client_transactions')
+      .select('lead_id, amount');
+
+    if (error) {
+      console.error('Error fetching all client transactions:', error);
+      return {};
+    }
+
+    var byLead = {};
+    (data || []).forEach(function(tx) {
+      if (!byLead[tx.lead_id]) byLead[tx.lead_id] = 0;
+      byLead[tx.lead_id] += (tx.amount || 0);
+    });
+    return byLead;
+  }
+
+  async function fetchEventLog(leadId) {
+    var { data, error } = await supabase
+      .from('crm_event_logs')
+      .select('id, lead_id, overtime_hours_main, overtime_hours_second, overtime_hours_assistant, night_overtime_hours, mezuva_hours, travel_addition_main, travel_addition_second, paid_main_photographer, paid_second_photographer, paid_assistant')
+      .eq('lead_id', leadId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Error fetching event log:', error);
+      return null;
+    }
+
+    return data;
+  }
+
+  async function fetchAllEventLogs(leadIds) {
+    if (!leadIds || leadIds.length === 0) return {};
+
+    // Fetch all event logs (no .in() filter — avoids PostgREST UUID issues)
+    var { data, error } = await supabase
+      .from('crm_event_logs')
+      .select('id, lead_id, overtime_hours_main, overtime_hours_second, overtime_hours_assistant, night_overtime_hours, mezuva_hours, travel_addition_main, travel_addition_second, paid_main_photographer, paid_second_photographer, paid_assistant');
+
+    if (error) {
+      console.error('Error fetching all event logs:', error);
+      return {};
+    }
+
+    var byLead = {};
+    (data || []).forEach(function(log) {
+      byLead[log.lead_id] = log;
+    });
+    return byLead;
+  }
+
+  async function createClientTransaction(record) {
+    if (typeof Realtime !== 'undefined' && Realtime.markLocalSave) Realtime.markLocalSave();
+    var { data, error } = await supabase
+      .from('crm_client_transactions')
+      .insert(record)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error creating client transaction:', error);
+      UI.toast('שגיאה ביצירת תשלום', 'danger');
+      return null;
+    }
+
+    UI.toast('תשלום נוצר', 'success');
+    invalidateCache('client_leads');
+    return data;
+  }
+
+  async function updateClientTransaction(id, updates) {
+    var { data, error } = await supabase
+      .from('crm_client_transactions')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error updating client transaction:', error);
+      UI.toast('שגיאה בעדכון תשלום', 'danger');
+      return null;
+    }
+
+    UI.toast('תשלום עודכן', 'success');
+    return data;
+  }
+
+  async function deleteClientTransaction(id) {
+    if (typeof Realtime !== 'undefined' && Realtime.markLocalSave) Realtime.markLocalSave();
+    var { error } = await supabase
+      .from('crm_client_transactions')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Error deleting client transaction:', error);
+      UI.toast('שגיאה במחיקת תשלום', 'danger');
+      return false;
+    }
+
+    UI.toast('תשלום נמחק', 'success');
+    return true;
+  }
+
+  // ==================================
+  // PHOTOGRAPHERS
+  // ==================================
+
+  var _photographerLeadFields = 'id, groom_first_name, bride_first_name, event_date, stage, ' +
+    'main_photographer_id, second_photographer_id, assistant_id, ' +
+    'photographer_cost, overtime_cost, night_shooting_cost, ' +
+    'mezuva_hour1_cost, mezuva_hour2_cost, mezuva_hour3_cost, ' +
+    'second_photographer_cost, second_overtime_cost, ' +
+    'assistant_cost, assistant_overtime_cost';
+
+  async function fetchPhotographers() {
+    var cached = _getCached('photographers');
+    if (cached) return cached;
+
+    var { data, error } = await supabase
+      .from('crm_team')
+      .select('*')
+      .order('first_name');
+
+    if (error) {
+      console.error('Error fetching photographers:', error);
+      return [];
+    }
+
+    // Filter to non-editor team members (photographers + assistants)
+    var photographers = (data || []).filter(function(t) { return !t.is_editor; });
+    _setCache('photographers', photographers);
+    return photographers;
+  }
+
+  async function fetchPhotographerLeads() {
+    var cached = _getCached('photographer_leads');
+    if (cached) return cached;
+
+    var { data, error } = await supabase
+      .from('crm_leads')
+      .select(_photographerLeadFields)
+      .eq('stage', 'חוזה נחתם')
+      .order('event_date', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching photographer leads:', error);
+      return [];
+    }
+
+    _setCache('photographer_leads', data || []);
+    return data || [];
+  }
+
+  async function updateEventLogPayment(logId, updates) {
+    var { data, error } = await supabase
+      .from('crm_event_logs')
+      .update(updates)
+      .eq('id', logId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error updating event log payment:', error);
+      UI.toast('שגיאה בעדכון תשלום', 'danger');
+      return null;
+    }
+
+    UI.toast('תשלום עודכן', 'success');
+    invalidateCache('photographer_leads');
+    return data;
+  }
+
+  // ==================================
+  // GENERIC
+  // ==================================
+
   async function updateRecord(table, id, updates) {
+    if (typeof Realtime !== 'undefined' && Realtime.markLocalSave) Realtime.markLocalSave();
     var { data, error } = await supabase
       .from(table)
       .update(updates)
@@ -316,6 +529,7 @@ var API = (function() {
   }
 
   return {
+    // Editors
     fetchEditors: fetchEditors,
     fetchLeadsForPayments: fetchLeadsForPayments,
     fetchEditorLeads: fetchEditorLeads,
@@ -326,6 +540,20 @@ var API = (function() {
     deleteEditorTransaction: deleteEditorTransaction,
     updateEditorTransaction: updateEditorTransaction,
     createEditorOffset: createEditorOffset,
+    // Clients
+    fetchClientLeads: fetchClientLeads,
+    fetchClientTransactions: fetchClientTransactions,
+    fetchAllClientTransactions: fetchAllClientTransactions,
+    fetchEventLog: fetchEventLog,
+    fetchAllEventLogs: fetchAllEventLogs,
+    createClientTransaction: createClientTransaction,
+    updateClientTransaction: updateClientTransaction,
+    deleteClientTransaction: deleteClientTransaction,
+    // Photographers
+    fetchPhotographers: fetchPhotographers,
+    fetchPhotographerLeads: fetchPhotographerLeads,
+    updateEventLogPayment: updateEventLogPayment,
+    // Generic
     updateRecord: updateRecord,
     invalidateCache: invalidateCache,
   };

@@ -1,0 +1,408 @@
+// ===========================================
+// Photographers View - CRM Payments
+// Photographer payment tracking per event
+// NOTE: All user-facing values escaped via UI.escapeHtml
+// ===========================================
+
+var Photographers = (function() {
+
+  var _currentPhotographerId = null;
+  var _listVersion = 0;
+  var _detailVersion = 0;
+
+  // ==================================
+  // COST CALCULATIONS
+  // ==================================
+
+  function _calcMezuvaCost(hours, lead) {
+    var total = 0;
+    if (hours >= 1) total += (lead.mezuva_hour1_cost || 0);
+    if (hours >= 2) total += (lead.mezuva_hour2_cost || 0);
+    if (hours >= 3) total += (hours - 2) * (lead.mezuva_hour3_cost || 0);
+    return total;
+  }
+
+  function _calcEventCost(lead, log, role) {
+    if (role === 'main') {
+      var baseCost = lead.photographer_cost || 0;
+      var otCost = (log ? (log.overtime_hours_main || 0) : 0) * (lead.overtime_cost || 0);
+      var nightCost = (log ? (log.night_overtime_hours || 0) : 0) * (lead.night_shooting_cost || 0);
+      var mezCost = _calcMezuvaCost(log ? (log.mezuva_hours || 0) : 0, lead);
+      var travelCost = log ? (log.travel_addition_main || 0) : 0;
+      return baseCost + otCost + nightCost + mezCost + travelCost;
+    } else if (role === 'second') {
+      var baseCost = lead.second_photographer_cost || 0;
+      var otCost = (log ? (log.overtime_hours_second || 0) : 0) * (lead.second_overtime_cost || 0);
+      var travelCost = log ? (log.travel_addition_second || 0) : 0;
+      return baseCost + otCost + travelCost;
+    } else { // assistant
+      var baseCost = lead.assistant_cost || 0;
+      var otCost = (log ? (log.overtime_hours_assistant || 0) : 0) * (lead.assistant_overtime_cost || 0);
+      return baseCost + otCost;
+    }
+  }
+
+  function _getPaidField(role) {
+    if (role === 'main') return 'paid_main_photographer';
+    if (role === 'second') return 'paid_second_photographer';
+    return 'paid_assistant';
+  }
+
+  function _getRoleLabel(role) {
+    if (role === 'main') return 'צלם ראשי';
+    if (role === 'second') return 'צלם שני';
+    return 'עוזר';
+  }
+
+  // ==================================
+  // BUILD PHOTOGRAPHER -> EVENTS MAP
+  // ==================================
+
+  function _buildPhotographerEvents(leads, eventLogs) {
+    // Returns: { photographerId: [{ lead, log, role, cost, paid }] }
+    var map = {};
+
+    leads.forEach(function(lead) {
+      var log = eventLogs[lead.id] || null;
+      var roles = [
+        { id: lead.main_photographer_id, role: 'main' },
+        { id: lead.second_photographer_id, role: 'second' },
+        { id: lead.assistant_id, role: 'assistant' }
+      ];
+
+      roles.forEach(function(r) {
+        if (!r.id) return;
+        if (!map[r.id]) map[r.id] = [];
+
+        var cost = _calcEventCost(lead, log, r.role);
+        var paidField = _getPaidField(r.role);
+        var paid = log ? (log[paidField] || 0) : 0;
+
+        map[r.id].push({
+          lead: lead,
+          log: log,
+          role: r.role,
+          cost: cost,
+          paid: paid
+        });
+      });
+    });
+
+    return map;
+  }
+
+  // ==================================
+  // PHOTOGRAPHERS LIST
+  // ==================================
+
+  window.initPhotographersList = async function(params) {
+    var myVersion = ++_listVersion;
+
+    var container = document.getElementById('photographers-view');
+    if (!container) return;
+
+    // Note: innerHTML used with escaped values only (UI.escapeHtml)
+    container.innerHTML = _renderListHeader() + UI.spinner();
+
+    var [photographers, leads] = await Promise.all([
+      API.fetchPhotographers(),
+      API.fetchPhotographerLeads()
+    ]);
+    if (myVersion !== _listVersion) return;
+
+    var leadIds = leads.map(function(l) { return l.id; });
+    var eventLogs = await API.fetchAllEventLogs(leadIds);
+    if (myVersion !== _listVersion) return;
+
+    var eventsMap = _buildPhotographerEvents(leads, eventLogs);
+
+    AppState.set('photographers', photographers);
+    AppState.set('photographerEventsMap', eventsMap);
+    AppState.set('photographerEventLogs', eventLogs);
+
+    _renderPhotographersList(container, photographers, eventsMap);
+
+    if (params && params.id) {
+      _currentPhotographerId = params.id;
+      _highlightSelected(params.id);
+    }
+  };
+
+  window.initPhotographerDetail = async function(params) {
+    if (!params || !params.id) return;
+    _currentPhotographerId = params.id;
+
+    var listContainer = document.getElementById('photographers-view');
+    if (listContainer && !listContainer.querySelector('.photographers-list')) {
+      await window.initPhotographersList();
+    }
+
+    _highlightSelected(params.id);
+    await _loadPhotographerDetail(params.id);
+  };
+
+  function _highlightSelected(photographerId) {
+    document.querySelectorAll('.photographer-card').forEach(function(el) {
+      el.classList.toggle('photographer-card-active', el.getAttribute('data-photographer-id') === photographerId);
+    });
+  }
+
+  function _renderListHeader() {
+    return '<div class="list-header">' +
+      '<h2 class="list-title">' + UI.escapeHtml('צלמים') + '</h2>' +
+      '<div class="list-search">' +
+        '<input type="text" class="form-input" placeholder="חיפוש..." oninput="Photographers.filterList(this.value)">' +
+      '</div>' +
+    '</div>';
+  }
+
+  function _renderPhotographersList(container, photographers, eventsMap) {
+    // Note: innerHTML used with escaped values only (UI.escapeHtml)
+    var html = _renderListHeader();
+    html += '<div class="photographers-list">';
+
+    // Show only photographers with at least one event
+    var withEvents = photographers.filter(function(p) {
+      return eventsMap[p.id] && eventsMap[p.id].length > 0;
+    });
+
+    if (withEvents.length === 0) {
+      html += UI.emptyState('אין צלמים עם אירועים');
+    } else {
+      for (var i = 0; i < withEvents.length; i++) {
+        var photographer = withEvents[i];
+        var events = eventsMap[photographer.id] || [];
+        var totalCost = 0, totalPaid = 0;
+        events.forEach(function(e) {
+          totalCost += e.cost;
+          totalPaid += e.paid;
+        });
+        var balance = totalCost - totalPaid;
+        html += _renderPhotographerCard(photographer, events.length, totalCost, totalPaid, balance);
+      }
+    }
+
+    html += '</div>';
+    container.innerHTML = html;
+  }
+
+  function _renderPhotographerCard(photographer, eventCount, totalCost, totalPaid, balance) {
+    var name = (photographer.first_name || '') + ' ' + (photographer.last_name || '');
+    var isActive = photographer.id === _currentPhotographerId ? ' photographer-card-active' : '';
+
+    var balanceClass = 'balance-zero';
+    var balanceLabel = 'מסולק';
+    if (balance > 0) {
+      balanceClass = 'balance-owed';
+      balanceLabel = 'חייבים: ' + UI.formatCurrency(balance);
+    } else if (balance < 0) {
+      balanceClass = 'balance-credit';
+      balanceLabel = 'שולם ביתר: ' + UI.formatCurrency(Math.abs(balance));
+    }
+
+    return '<div class="photographer-card' + isActive + '" data-photographer-id="' + UI.escapeHtml(photographer.id) + '" onclick="navigateTo(\'photographers/' + UI.escapeHtml(photographer.id) + '\')">' +
+      '<div class="photographer-card-header">' +
+        '<div>' +
+          '<div class="photographer-card-name">' + UI.escapeHtml(name.trim()) + '</div>' +
+          '<div class="photographer-card-count">' + eventCount + ' ' + UI.escapeHtml('אירועים') + '</div>' +
+        '</div>' +
+        '<div class="photographer-card-balance ' + balanceClass + '">' + UI.escapeHtml(balanceLabel) + '</div>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function filterList(searchTerm) {
+    var cards = document.querySelectorAll('.photographer-card');
+    var term = (searchTerm || '').toLowerCase();
+    cards.forEach(function(card) {
+      var name = (card.querySelector('.photographer-card-name') || {}).textContent || '';
+      card.style.display = name.toLowerCase().indexOf(term) > -1 ? '' : 'none';
+    });
+  }
+
+  // ==================================
+  // PHOTOGRAPHER DETAIL
+  // ==================================
+
+  async function _loadPhotographerDetail(photographerId) {
+    var myVersion = ++_detailVersion;
+
+    var container = document.getElementById('photographer-detail-view');
+    if (!container) return;
+
+    // Note: spinner is safe static HTML
+    container.innerHTML = UI.spinner();
+
+    var photographers = AppState.get('photographers') || await API.fetchPhotographers();
+    if (myVersion !== _detailVersion) return;
+
+    var photographer = photographers.find(function(p) { return p.id === photographerId; });
+    if (!photographer) {
+      container.innerHTML = UI.emptyState('צלם לא נמצא');
+      return;
+    }
+
+    var leads = await API.fetchPhotographerLeads();
+    if (myVersion !== _detailVersion) return;
+
+    var leadIds = leads.map(function(l) { return l.id; });
+    var eventLogs = await API.fetchAllEventLogs(leadIds);
+    if (myVersion !== _detailVersion) return;
+
+    var eventsMap = _buildPhotographerEvents(leads, eventLogs);
+    var events = eventsMap[photographerId] || [];
+
+    _renderPhotographerDetail(container, photographer, events);
+  }
+
+  function _renderPhotographerDetail(container, photographer, events) {
+    var name = (photographer.first_name || '') + ' ' + (photographer.last_name || '');
+
+    // All strings passed through UI.escapeHtml before innerHTML assignment
+    var html = '';
+
+    // Mobile back button
+    html += '<div class="detail-back-btn" onclick="navigateTo(\'photographers\')">' + UI.escapeHtml('\u2192 חזרה לרשימה') + '</div>';
+
+    // Summary card
+    var totalCost = 0, totalPaid = 0;
+    events.forEach(function(e) {
+      totalCost += e.cost;
+      totalPaid += e.paid;
+    });
+    var totalBalance = totalCost - totalPaid;
+
+    html += '<div class="detail-card">';
+    html += '<div class="detail-section-title">' + UI.escapeHtml(name.trim()) + '</div>';
+    html += '<div class="detail-grid">';
+    html += '<div class="detail-item"><div class="detail-label">' + UI.escapeHtml('טלפון') + '</div><div class="detail-value">' + UI.formatPhone(photographer.phone) + '</div></div>';
+    if (photographer.email) html += '<div class="detail-item"><div class="detail-label">' + UI.escapeHtml('מייל') + '</div><div class="detail-value">' + UI.escapeHtml(photographer.email) + '</div></div>';
+
+    var balClass = totalBalance > 0 ? 'balance-owed' : totalBalance < 0 ? 'balance-credit' : 'balance-zero';
+    var balText = totalBalance > 0 ? 'חייבים לו: ' + UI.formatCurrency(totalBalance)
+                : totalBalance < 0 ? 'שולם ביתר: ' + UI.formatCurrency(Math.abs(totalBalance))
+                : 'מסולק';
+    html += '<div class="detail-item"><div class="detail-label">' + UI.escapeHtml('יתרה כוללת') + '</div><div class="detail-value"><strong class="' + balClass + '">' + UI.escapeHtml(balText) + '</strong></div></div>';
+    html += '</div></div>';
+
+    // Events table
+    html += '<div class="detail-card">';
+    html += '<div class="detail-section-title">' + UI.escapeHtml('אירועים') + ' (' + events.length + ')</div>';
+
+    if (events.length === 0) {
+      html += UI.emptyState('אין אירועים משויכים לצלם זה');
+    } else {
+      html += '<div class="responsive-table-wrap"><table class="data-table">';
+      html += '<thead><tr>' +
+        '<th>' + UI.escapeHtml('זוג') + '</th>' +
+        '<th>' + UI.escapeHtml('תאריך') + '</th>' +
+        '<th>' + UI.escapeHtml('תפקיד') + '</th>' +
+        '<th>' + UI.escapeHtml('עלות') + '</th>' +
+        '<th>' + UI.escapeHtml('שולם') + '</th>' +
+        '<th>' + UI.escapeHtml('יתרה') + '</th>' +
+        '<th>' + UI.escapeHtml('סטטוס') + '</th>' +
+        '<th></th>' +
+      '</tr></thead><tbody>';
+
+      // Sort by event_date ascending
+      var sorted = events.slice().sort(function(a, b) {
+        var da = a.lead.event_date || '';
+        var db = b.lead.event_date || '';
+        return da.localeCompare(db);
+      });
+
+      for (var i = 0; i < sorted.length; i++) {
+        var ev = sorted[i];
+        var lead = ev.lead;
+        var couple = (lead.groom_first_name || '') + ' & ' + (lead.bride_first_name || '');
+        var balance = ev.cost - ev.paid;
+
+        var roleBadge = UI.badge(_getRoleLabel(ev.role), ev.role === 'main' ? 'info' : ev.role === 'second' ? 'purple' : 'warning');
+
+        var statusBadge = balance === 0
+          ? UI.badge('שולם', 'success')
+          : balance > 0 && ev.paid > 0
+            ? UI.badge('חלקי', 'warning')
+            : balance > 0
+              ? UI.badge('לא שולם', 'danger')
+              : UI.badge('ביתר', 'info');
+
+        var canEdit = typeof isAdmin === 'function' && isAdmin() && ev.log;
+
+        html += '<tr>' +
+          '<td><strong>' + UI.escapeHtml(couple) + '</strong></td>' +
+          '<td>' + UI.formatDate(lead.event_date) + '</td>' +
+          '<td>' + roleBadge + '</td>' +
+          '<td>' + UI.formatCurrency(ev.cost) + '</td>' +
+          '<td>' + UI.formatCurrency(ev.paid) + '</td>' +
+          '<td class="' + (balance > 0 ? 'balance-owed' : balance < 0 ? 'balance-credit' : '') + '"><strong>' + UI.formatCurrency(balance) + '</strong></td>' +
+          '<td>' + statusBadge + '</td>' +
+          '<td>' + (canEdit ?
+            '<button class="btn btn-secondary btn-xs" onclick="Photographers.editPaid(\'' +
+              UI.escapeHtml(ev.log.id) + '\', \'' +
+              UI.escapeHtml(photographer.id) + '\', \'' +
+              ev.role + '\', ' + ev.paid +
+            ')" title="' + UI.escapeHtml('עדכן תשלום') + '">&#9998;</button>' : '') +
+          '</td>' +
+        '</tr>';
+      }
+
+      html += '</tbody></table></div>';
+
+      // Total summary
+      html += '<div class="running-balance-summary">';
+      html += '<strong>' + UI.escapeHtml('סה"כ: ') + '</strong>';
+      html += UI.escapeHtml('עלות: ') + '<strong>' + UI.formatCurrency(totalCost) + '</strong>';
+      html += ' | ';
+      html += UI.escapeHtml('שולם: ') + '<strong>' + UI.formatCurrency(totalPaid) + '</strong>';
+      html += ' | ';
+      html += UI.escapeHtml('יתרה: ') + '<strong class="' + (totalBalance > 0 ? 'balance-owed' : totalBalance < 0 ? 'balance-credit' : 'balance-zero') + '">' + UI.formatCurrency(totalBalance) + '</strong>';
+      html += '</div>';
+    }
+
+    html += '</div>';
+
+    // Note: innerHTML used with escaped values only (UI.escapeHtml)
+    container.innerHTML = html;
+  }
+
+  // ==================================
+  // MODALS
+  // ==================================
+
+  function editPaid(logId, photographerId, role, currentPaid) {
+    var roleLabel = _getRoleLabel(role);
+    var paidField = _getPaidField(role);
+
+    FormHelpers.openEditModal({
+      title: 'עדכון תשלום ל' + roleLabel,
+      screen: 'payments',
+      width: '400px',
+      data: { amount: currentPaid },
+      sections: [{
+        title: 'פרטים',
+        fields: [
+          { name: 'amount', label: 'סכום ששולם', type: 'number', required: true, noSpinner: true }
+        ]
+      }],
+      onSave: async function(formData) {
+        var updates = {};
+        updates[paidField] = formData.amount;
+        await API.updateEventLogPayment(logId, updates);
+
+        API.invalidateCache('photographer_leads');
+        await _loadPhotographerDetail(photographerId);
+        await window.initPhotographersList();
+      }
+    });
+  }
+
+  // ==================================
+  // PUBLIC (used via Photographers.xxx in onclick handlers)
+  // ==================================
+
+  return {
+    filterList: filterList,
+    editPaid: editPaid,
+  };
+})();

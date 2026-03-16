@@ -2099,12 +2099,210 @@ input, select, textarea {
   .split-panel-detail {
     padding: 0;
   }
+
+  /* ---- Payments-specific mobile styles ---- */
+
+  /* List containers: flush edges */
+  .editors-list,
+  .clients-list,
+  .photographers-list {
+    padding: 0 8px 8px;
+    gap: 6px;
+  }
+
+  /* List header */
+  .list-header {
+    padding: 12px 12px 8px;
+  }
+
+  .list-title {
+    font-size: 16px;
+  }
+
+  .list-filters {
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .list-filter-select {
+    width: 100%;
+  }
+
+  /* Cards in list: smaller padding */
+  .editor-card,
+  .client-card,
+  .photographer-card {
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+  }
+
+  .editor-card-name,
+  .client-card-name,
+  .photographer-card-name {
+    font-size: 13px;
+  }
+
+  .editor-card-balance,
+  .client-card-balance,
+  .photographer-card-balance {
+    font-size: 11px;
+    padding: 1px 6px;
+  }
+
+  .client-card-date,
+  .photographer-card-count {
+    font-size: 11px;
+  }
+
+  .client-ph-badge {
+    font-size: 10px;
+    padding: 0 6px;
+  }
+
+  /* Detail cards: flush edges on mobile */
+  .detail-card {
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    padding: 14px 12px;
+    margin-bottom: 0;
+    border-bottom: 1px solid var(--border);
+    box-shadow: none;
+  }
+
+  .detail-section-title {
+    font-size: 12px;
+  }
+
+  .detail-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 2px 12px;
+  }
+
+  .detail-item {
+    padding: 6px 0;
+  }
+
+  .detail-label {
+    font-size: 10px;
+  }
+
+  .detail-value {
+    font-size: 13px;
+  }
+
+  /* Price breakdown on mobile */
+  .price-row {
+    font-size: 12px;
+    padding: 5px 0;
+  }
+
+  .price-row-total {
+    font-size: 13px;
+  }
+
+  .price-section-label {
+    font-size: 11px;
+  }
+
+  /* Payment summary on mobile */
+  .payment-summary {
+    margin-top: 12px;
+    padding: 10px;
+  }
+
+  .payment-summary-row {
+    font-size: 13px;
+  }
+
+  /* Running balance summary on mobile */
+  .running-balance-summary {
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+
+  /* Detail back button: bigger touch target */
+  .detail-back-btn {
+    padding: 14px 12px;
+    font-size: 15px;
+    font-weight: 500;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-card);
+  }
+
+  /* Tables on mobile */
+  .responsive-table-wrap {
+    margin: 0 -12px;
+  }
+
+  .data-table th,
+  .data-table td {
+    padding: 8px 6px;
+    font-size: 11px;
+  }
+
+  .data-table-sm th,
+  .data-table-sm td {
+    padding: 6px 5px;
+    font-size: 11px;
+  }
+
+  /* Row actions: stack buttons */
+  .row-actions .btn {
+    font-size: 10px;
+    padding: 2px 6px;
+  }
+
+  .btn-xs {
+    padding: 4px 8px;
+    font-size: 10px;
+    min-height: 28px;
+  }
+
+  /* Badge sizes on mobile */
+  .pay-type-badge {
+    font-size: 0.72rem;
+    padding: 1px 6px;
+  }
+
+  /* Lead transactions detail (expanded row) */
+  .lead-transactions-detail {
+    padding: 8px 12px;
+  }
+
+  .lead-tx-header strong {
+    font-size: 12px;
+  }
+
+  /* Modals on mobile */
+  .edit-modal {
+    width: 95vw !important;
+    max-height: 90vh;
+  }
+
+  /* Progress bar adjustments */
+  .progress-bar {
+    height: 6px;
+  }
 }
 
 /* Very small screens */
 @media (max-width: 480px) {
   .summary-grid {
     grid-template-columns: 1fr;
+  }
+
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .list-filters {
+    gap: 4px;
+  }
+
+  .client-card-header,
+  .photographer-card-header {
+    flex-wrap: wrap;
   }
 }
 
@@ -2712,6 +2910,214 @@ textarea.form-input {
   margin-top: 4px;
 }
 
+/* ---- Client/Photographer list containers ---- */
+.clients-list,
+.photographers-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 12px 12px;
+}
+
+/* ---- Client card styles ---- */
+.client-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.client-card:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow);
+}
+
+.client-card-active {
+  border-color: var(--accent);
+  background: var(--accent-light);
+}
+
+.client-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.client-card-name {
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.client-card-date {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.client-card-balance {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+.client-card-progress {
+  margin-top: 8px;
+}
+
+.client-card-photographers {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+.client-ph-badge {
+  display: inline-block;
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: #1e40af;
+  color: #fff;
+  white-space: nowrap;
+}
+
+.client-ph-badge-second {
+  background: #9ca3af;
+}
+
+/* Photographer colors (main) */
+.client-ph-badge.photographer-blue-dark  { background: #1e40af; color: #fff; }
+.client-ph-badge.photographer-red        { background: #b91c1c; color: #fff; }
+.client-ph-badge.photographer-yellow-dark{ background: #b45309; color: #fff; }
+.client-ph-badge.photographer-teal       { background: #0d9488; color: #fff; }
+
+/* Photographer colors (second) */
+.client-ph-badge.photographer-second-blue-dark  { background: #60a5fa; color: #1e3a8a; }
+.client-ph-badge.photographer-second-red        { background: #fca5a5; color: #7f1d1d; }
+.client-ph-badge.photographer-second-yellow-dark{ background: #fcd34d; color: #78350f; }
+.client-ph-badge.photographer-second-teal       { background: #5eead4; color: #134e4a; }
+
+/* ---- Photographer card styles ---- */
+.photographer-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.photographer-card:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow);
+}
+
+.photographer-card-active {
+  border-color: var(--accent);
+  background: var(--accent-light);
+}
+
+.photographer-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.photographer-card-name {
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.photographer-card-count {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.photographer-card-balance {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+/* ---- Price breakdown styles (clients detail) ---- */
+.detail-card .price-breakdown {
+  padding: 0;
+  max-height: none;
+  overflow: visible;
+  background: none;
+  border: none;
+  border-radius: 0;
+}
+
+.price-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.price-row-total {
+  padding: 10px 0;
+  font-size: 14px;
+  border-top: 2px solid var(--border);
+  margin-top: 4px;
+}
+
+.price-label {
+  color: var(--text-secondary);
+}
+
+.price-negative {
+  color: var(--danger);
+}
+
+.price-divider {
+  height: 1px;
+  background: var(--border-light);
+  margin: 8px 0;
+}
+
+.price-section-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+}
+
+/* ---- Payment summary ---- */
+.payment-summary {
+  margin-top: 16px;
+  padding: 12px;
+  background: var(--bg);
+  border-radius: var(--radius);
+}
+
+.payment-summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 14px;
+}
+
+.payment-summary-progress {
+  margin-top: 8px;
+}
+
 /* ---- Balance colors ---- */
 .balance-owed {
   color: var(--danger);
@@ -2972,6 +3378,12 @@ input.form-input-error + .cs-dropdown .cs-dropdown-btn {
   background: var(--danger-light);
 }
 
+.btn-icon-sm {
+  font-size: 12px;
+  padding: 2px 4px;
+  vertical-align: middle;
+}
+
 /* ---- Extra small button ---- */
 .btn-xs {
   padding: 3px 10px;
@@ -2991,6 +3403,23 @@ input.form-input-error + .cs-dropdown .cs-dropdown-btn {
   font-size: 18px;
   font-weight: 600;
   margin: 0;
+}
+
+.list-filters {
+  display: flex;
+  gap: 6px;
+}
+
+.list-filter-select {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 80px;
+  font-size: 13px;
+}
+
+.list-filters input {
+  flex: 1;
+  font-size: 13px;
 }
 
 .list-search input {
