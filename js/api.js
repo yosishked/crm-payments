@@ -53,7 +53,7 @@ var API = (function() {
 
     var { data, error } = await supabase
       .from('crm_leads')
-      .select('id, groom_first_name, bride_first_name, event_date, editor_id, editing_cost, package_name, stage, main_photographer_id, second_photographer_id')
+      .select('id, groom_first_name, bride_first_name, event_date, editor_id, editing_cost, stage, main_photographer_id, second_photographer_id')
       .order('event_date', { ascending: false });
 
     if (error) {
@@ -69,7 +69,7 @@ var API = (function() {
   async function fetchEditorLeads(editorId) {
     var { data, error } = await supabase
       .from('crm_leads')
-      .select('id, groom_first_name, bride_first_name, event_date, editor_id, editing_cost, package_name, stage')
+      .select('id, groom_first_name, bride_first_name, event_date, editor_id, editing_cost, stage')
       .eq('editor_id', editorId)
       .order('event_date', { ascending: false });
 
@@ -132,6 +132,7 @@ var API = (function() {
 
   // ---- Create editor transaction ----
   async function createEditorTransaction(record) {
+    if (typeof Realtime !== 'undefined' && Realtime.markLocalSave) Realtime.markLocalSave();
     var { data, error } = await supabase
       .from('crm_editor_transactions')
       .insert(record)
@@ -150,6 +151,7 @@ var API = (function() {
 
   // ---- Delete editor transaction ----
   async function deleteEditorTransaction(id) {
+    if (typeof Realtime !== 'undefined' && Realtime.markLocalSave) Realtime.markLocalSave();
     var { error } = await supabase
       .from('crm_editor_transactions')
       .delete()

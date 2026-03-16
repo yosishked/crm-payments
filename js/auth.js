@@ -73,6 +73,7 @@ supabase.auth.onAuthStateChange(async function(event, session) {
     document.getElementById('app-shell').hidden = false;
     _hideAccessDenied();
     _updateUserUI(currentUser);
+    Realtime.init();
     window.handleRoute();
   } else {
     document.getElementById('auth-view').hidden = false;
@@ -170,6 +171,7 @@ function _hideAccessDenied() {
     document.getElementById('app-shell').hidden = false;
     _hideAccessDenied();
     _updateUserUI(currentUser);
+    Realtime.init();
     window.handleRoute();
   }
 })();

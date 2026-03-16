@@ -167,6 +167,25 @@ var Editors = (function() {
       API.fetchEditorTransactions(editorId)
     ]);
 
+    // Also fetch leads that have transactions but aren't in editor_leads
+    // (e.g. transaction created but editor_id not yet set on lead)
+    var leadIds = leads.map(function(l) { return l.id; });
+    var missingIds = [];
+    transactions.forEach(function(tx) {
+      if (tx.lead_id && leadIds.indexOf(tx.lead_id) === -1 && missingIds.indexOf(tx.lead_id) === -1) {
+        missingIds.push(tx.lead_id);
+      }
+    });
+    if (missingIds.length > 0) {
+      var { data: extraLeads } = await supabase
+        .from('crm_leads')
+        .select('id, groom_first_name, bride_first_name, event_date, editor_id, editing_cost, stage')
+        .in('id', missingIds);
+      if (extraLeads && extraLeads.length) {
+        leads = leads.concat(extraLeads);
+      }
+    }
+
     _expandedLeadId = _expandedLeadId; // preserve expanded state
     _renderEditorDetail(container, editor, leads, transactions);
   }
