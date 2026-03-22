@@ -238,6 +238,23 @@ input, select, textarea {
   flex-shrink: 0;
 }
 
+.nav-divider {
+  height: 1px;
+  background: rgba(255,255,255,0.1);
+  margin: 8px 14px;
+}
+
+.nav-external {
+  opacity: 0.75;
+}
+.nav-external:hover {
+  opacity: 1;
+}
+
+.sidebar-logo-icon {
+  color: var(--text-sidebar-active);
+}
+
 .nav-label {
   white-space: nowrap;
 }
