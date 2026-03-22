@@ -11,28 +11,25 @@ var Clients = (function() {
   var _detailVersion = 0;
   var _currentFilter = 'all'; // all | unpaid | paid
 
-  // ---- Cross-module links ----
+  // ---- Cross-module links (sidebar + mobile) ----
   async function _updateCrossLinks(leadId) {
-    var leadsLink = document.getElementById('nav-link-leads');
-    var editingLink = document.getElementById('nav-link-editing');
+    var leadsUrl = leadId ? 'https://crm.yossishaked.net/#leads/' + leadId : 'https://crm.yossishaked.net';
+    ['nav-link-leads', 'mobile-link-leads'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.href = leadsUrl;
+    });
+
+    var editingUrl = 'https://editing.yossishaked.net';
     if (leadId) {
-      if (leadsLink) leadsLink.href = 'https://crm.yossishaked.net/#leads/' + leadId;
-      if (editingLink) {
-        try {
-          var { data } = await supabase.from('crm_editing').select('id').eq('lead_id', leadId).limit(1).single();
-          if (data) {
-            editingLink.href = 'https://editing.yossishaked.net/#editing/' + data.id;
-          } else {
-            editingLink.href = 'https://editing.yossishaked.net';
-          }
-        } catch(e) {
-          editingLink.href = 'https://editing.yossishaked.net';
-        }
-      }
-    } else {
-      if (leadsLink) leadsLink.href = 'https://crm.yossishaked.net';
-      if (editingLink) editingLink.href = 'https://editing.yossishaked.net';
+      try {
+        var { data } = await supabase.from('crm_editing').select('id').eq('lead_id', leadId).limit(1).single();
+        if (data) editingUrl = 'https://editing.yossishaked.net/#editing/' + data.id;
+      } catch(e) {}
     }
+    ['nav-link-editing', 'mobile-link-editing'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.href = editingUrl;
+    });
   }
 
   // Photographer color map (same as crm-leads)

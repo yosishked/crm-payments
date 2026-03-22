@@ -1951,6 +1951,10 @@ input, select, textarea {
     display: none;
   }
 
+  .sidebar-toggle {
+    display: none;
+  }
+
   .mobile-nav {
     display: flex;
   }
