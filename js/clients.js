@@ -11,6 +11,30 @@ var Clients = (function() {
   var _detailVersion = 0;
   var _currentFilter = 'all'; // all | unpaid | paid
 
+  // ---- Cross-module links ----
+  async function _updateCrossLinks(leadId) {
+    var leadsLink = document.getElementById('nav-link-leads');
+    var editingLink = document.getElementById('nav-link-editing');
+    if (leadId) {
+      if (leadsLink) leadsLink.href = 'https://crm.yossishaked.net/#leads/' + leadId;
+      if (editingLink) {
+        try {
+          var { data } = await supabase.from('crm_editing').select('id').eq('lead_id', leadId).limit(1).single();
+          if (data) {
+            editingLink.href = 'https://editing.yossishaked.net/#editing/' + data.id;
+          } else {
+            editingLink.href = 'https://editing.yossishaked.net';
+          }
+        } catch(e) {
+          editingLink.href = 'https://editing.yossishaked.net';
+        }
+      }
+    } else {
+      if (leadsLink) leadsLink.href = 'https://crm.yossishaked.net';
+      if (editingLink) editingLink.href = 'https://editing.yossishaked.net';
+    }
+  }
+
   // Photographer color map (same as crm-leads)
   var PHOTOGRAPHER_COLORS = {
     '27e5cedb-59a6-4361-a0b7-7ccc51d85b4c': 'blue-dark',
@@ -267,6 +291,9 @@ var Clients = (function() {
     if (myVersion !== _detailVersion) return;
 
     _renderClientDetail(container, lead, eventLog, transactions);
+
+    // Update sidebar cross-module links
+    _updateCrossLinks(leadId);
   }
 
   function _renderClientDetail(container, lead, eventLog, transactions) {

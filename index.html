@@ -56,11 +56,11 @@
         <div class="nav-divider"></div>
 
         <!-- מודולים חיצוניים -->
-        <a class="nav-item nav-external" href="https://crm.yossishaked.net">
+        <a class="nav-item nav-external" id="nav-link-leads" href="https://crm.yossishaked.net">
           <svg class="nav-icon" viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5z" fill="currentColor"/></svg>
           <span class="nav-label">לידים</span>
         </a>
-        <a class="nav-item nav-external" href="https://editing.yossishaked.net">
+        <a class="nav-item nav-external" id="nav-link-editing" href="https://editing.yossishaked.net">
           <svg class="nav-icon" viewBox="0 0 24 24"><circle cx="6" cy="6" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8.12 8.12 12 12" fill="none" stroke="currentColor" stroke-width="2"/><path d="M20 4 8.12 15.88" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="6" cy="18" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M14.8 14.8 20 20" fill="none" stroke="currentColor" stroke-width="2"/></svg>
           <span class="nav-label">עריכות</span>
         </a>
@@ -79,6 +79,9 @@
         </button>
       </div>
     </aside>
+    <button class="sidebar-toggle" onclick="document.getElementById('sidebar').classList.toggle('collapsed')" title="כווץ/הרחב">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+    </button>
 
     <!-- Main Content -->
     <main class="main-content">
