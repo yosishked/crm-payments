@@ -118,6 +118,13 @@ Trigger על crm_editor_transactions מעדכן אוטומטית את crm_team.b
 - `form-helpers.js` — זהה
 - `css/style.css` — מבוסס על crm-leads + תוספות ספציפיות
 
+## Sidebar משותף + ניווט בין מודולים
+- Sidebar בהיר (רקע לבן) עם כפתור כיווץ
+- לינקים ל-5 מודולים: לקוחות/עורכות/צלמים (פנימי), לידים, עריכות (חיצוני)
+- **לינקים דינמיים**: כשנמצאים ב-client detail, הלינקים מעבירים לאותו ליד/עריכה לפי `lead_id`
+- SVG icons (ללא אימוג'י), ספריית אייקונים ב-ui-components.js
+- Mobile: bottom-nav עם כל המודולים
+
 ## Deploy (Cloudflare Pages)
 - **GitHub repo:** `yosishked/crm-payments` (private)
 - **URL:** `https://payments.yossishaked.net` (custom domain)
