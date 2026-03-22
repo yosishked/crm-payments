@@ -477,6 +477,25 @@ input, select, textarea {
 .badge-purple  { background: var(--purple-light);  color: #5b21b6; }
 .badge-muted   { background: #f3f4f6;             color: #6b7280; }
 
+/* Editing stage badges */
+.badge-stage-new { background: #a1c6ff; color: #000; }
+.badge-stage-songs-sent { background: #ffba06; color: #000; }
+.badge-stage-songs-chosen { background: #d54402; color: #fff; }
+.badge-stage-editing { background: #156fe2; color: #fff; }
+.badge-stage-sent-office { background: #9be095; color: #000; }
+.badge-stage-waiting-payment { background: #9be095; color: #000; }
+.badge-stage-sent-client { background: #016500; color: #fff; }
+.badge-stage-corrections-form { background: #74ebe2; color: #000; }
+.badge-stage-waiting-corrections { background: #7d37ef; color: #fff; }
+.badge-stage-corrections-in { background: #ffa6c1; color: #000; }
+.badge-stage-corrections-office { background: #9be095; color: #000; }
+.badge-stage-corrected-client { background: #016500; color: #fff; }
+.badge-stage-address-form { background: #a1c6ff; color: #000; }
+.badge-stage-waiting-mail { background: #dc053c; color: #fff; }
+.badge-stage-sent-mail { background: #d0f5d1; color: #000; }
+.badge-stage-delivered { background: #016500; color: #fff; }
+.badge-stage-cancelled { background: #fad3fc; color: #000; }
+
 /* ---- Table ---- */
 .data-table-wrapper {
   overflow-x: auto;

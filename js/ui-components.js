@@ -5,6 +5,34 @@
 
 var UI = (function() {
 
+  // SVG icon helper — inline SVGs, no external dependency
+  var _icons = {
+    'calendar': '<path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/>',
+    'camera': '<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>',
+    'scissors': '<circle cx="6" cy="6" r="3"/><path d="M8.12 8.12 12 12"/><path d="M20 4 8.12 15.88"/><circle cx="6" cy="18" r="3"/><path d="M14.8 14.8 20 20"/>',
+    'clock': '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+    'clock-3': '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16.5 12"/>',
+    'check-circle': '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>',
+    'alert-circle': '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>',
+    'search-x': '<path d="m13.5 8.5-5 5M8.5 8.5l5 5"/><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+    'clipboard-list': '<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4M12 16h4M8 11h.01M8 16h.01"/>',
+    'settings': '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+    'music': '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
+    'link': '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+    'file-edit': '<path d="M4 13.5V4a2 2 0 0 1 2-2h8.5L20 7.5V20a2 2 0 0 1-2 2h-5.5"/><polyline points="14 2 14 8 20 8"/><path d="M10.42 12.61a2.1 2.1 0 1 1 2.97 2.97L7.95 21 4 22l.99-3.95 5.43-5.44Z"/>',
+    'package': '<path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>',
+    'clapperboard': '<path d="M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1.1-.3 2.2.3 2.5 1.3Z"/><path d="m6.2 5.3 3.1 3.9M12.4 3.4l3.1 4M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>',
+    'search': '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>',
+    'refresh-cw': '<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>',
+    'trash-2': '<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>',
+    'user': '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'
+  };
+  function icon(name, size) {
+    size = size || 16;
+    var paths = _icons[name] || _icons['clipboard-list'];
+    return '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:middle">' + paths + '</svg>';
+  }
+
   function escapeHtml(text) {
     if (text == null) return '';
     var div = document.createElement('div');
@@ -39,21 +67,23 @@ var UI = (function() {
   }
 
   var EDITING_STAGE_COLORS = {
-    'עריכה חדשה': 'info',
-    'נשלחה בקשה לשירים': 'info',
-    'בחרו שירים': 'info',
-    'בעריכה': 'warning',
-    'נשלח ללקוח גרסה ראשונה': 'purple',
-    'נשלח טופס לתיקונים': 'warning',
-    'ממתין לתיקונים מהלקוח': 'warning',
-    'נכנס לתיקונים מהלקוח': 'warning',
-    'גרסה מתוקנת נשלחה ללקוח': 'purple',
-    'מוכן מחכה לתשלום': 'warning',
-    'נשלח טופס בקשת כתובת': 'info',
-    'מחכה לשליחה לדואר': 'info',
-    'נשלח בדואר': 'success',
-    'נמסר סופית בדואר': 'success',
-    'מחכה לטיפול אחר': 'danger',
+    'עריכה חדשה': 'stage-new',
+    'נשלחה בקשה לשירים': 'stage-songs-sent',
+    'בחרו שירים': 'stage-songs-chosen',
+    'בעריכה': 'stage-editing',
+    'נשלח למשרד גרסה ראשונה': 'stage-sent-office',
+    'מוכן מחכה לתשלום': 'stage-waiting-payment',
+    'נשלח ללקוח גרסה ראשונה': 'stage-sent-client',
+    'נשלח טופס לתיקונים': 'stage-corrections-form',
+    'ממתין לתיקונים מהלקוח': 'stage-waiting-corrections',
+    'נכנס לתיקונים מהלקוח': 'stage-corrections-in',
+    'נשלח למשרד תיקונים מהלקוח': 'stage-corrections-office',
+    'גרסה מתוקנת נשלחה ללקוח': 'stage-corrected-client',
+    'נשלח טופס בקשת כתובת': 'stage-address-form',
+    'מחכה לשליחה לדואר': 'stage-waiting-mail',
+    'נשלח בדואר': 'stage-sent-mail',
+    'נמסר סופית בדואר': 'stage-delivered',
+    'בוטל': 'stage-cancelled'
   };
 
   function editingStageBadge(stage) {
@@ -114,7 +144,7 @@ var UI = (function() {
 
   function emptyState(message, icon) {
     return '<div class="empty-state">' +
-      '<div class="empty-state-icon">' + (icon || '📋') + '</div>' +
+      '<div class="empty-state-icon">' + (icon || UI.icon('clipboard-list', 32)) + '</div>' +
       '<p>' + escapeHtml(message) + '</p>' +
     '</div>';
   }
@@ -185,5 +215,6 @@ var UI = (function() {
     debounce: debounce,
     conflictBanner: conflictBanner,
     dismissConflictBanner: dismissConflictBanner,
+    icon: icon
   };
 })();
