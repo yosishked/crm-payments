@@ -66,6 +66,10 @@
   padding: 0;
 }
 
+html {
+  overflow-x: hidden;
+}
+
 body {
   font-family: var(--font);
   background: var(--bg);
@@ -74,6 +78,9 @@ body {
   font-size: 14px;
   direction: rtl;
   min-height: 100vh;
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
+  -webkit-text-size-adjust: 100%;
 }
 
 a {
@@ -2384,7 +2391,11 @@ input, select, textarea {
 
   /* Progress bar adjustments */
   .progress-bar {
-    height: 6px;
+    height: 22px;
+  }
+
+  .progress-label {
+    font-size: 10px;
   }
 }
 
@@ -3291,6 +3302,7 @@ th .balance-zero { background: none; }
 .clickable-row {
   cursor: pointer;
   transition: background 0.1s;
+  border-bottom: 1px solid var(--border);
 }
 
 .clickable-row:hover {
@@ -3299,6 +3311,7 @@ th .balance-zero { background: none; }
 
 .row-expanded {
   background: var(--accent-light);
+  border-bottom: none;
 }
 
 /* ---- Transaction detail (expanded row) ---- */
@@ -3307,8 +3320,24 @@ th .balance-zero { background: none; }
   background: var(--bg);
 }
 
+.transactions-detail-row {
+  border-bottom: 2px solid var(--border);
+}
+
 .lead-transactions-detail {
   padding: 12px 16px;
+}
+
+.lead-transactions-detail .data-table-sm tbody tr:nth-child(odd) td {
+  background: #ffffff;
+}
+
+.lead-transactions-detail .data-table-sm tbody tr:nth-child(even) td {
+  background: #f1f5f9;
+}
+
+.lead-transactions-detail .data-table-sm td {
+  border-bottom: 1px solid #d1d5db;
 }
 
 .lead-tx-header {
