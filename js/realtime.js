@@ -10,6 +10,7 @@ var Realtime = (function() {
   var COOLDOWN = 3000; // ignore realtime events for 3s after local save
   var _refreshTimer = null; // debounce for handleChange
   var _isRefreshing = false; // prevent concurrent refreshes
+  var _postSaveTimer = null; // soft refresh after local save
 
   function init() {
     if (_channel) return;
@@ -56,10 +57,30 @@ var Realtime = (function() {
 
   function markLocalSave() {
     _lastLocalSave = Date.now();
+    // Schedule soft refresh after local save (update sidebar card without full rebuild)
+    if (_postSaveTimer) clearTimeout(_postSaveTimer);
+    _postSaveTimer = setTimeout(function() {
+      _postSaveTimer = null;
+      if (_isRefreshing || _isUserEditing()) return;
+      var hash = window.location.hash.slice(1) || '';
+      if (hash.startsWith('clients/')) {
+        var leadId = hash.split('/')[1];
+        if (typeof window._softRefreshClientDetail === 'function') {
+          window._softRefreshClientDetail(leadId);
+        }
+      } else if (hash.startsWith('editors/')) {
+        var editorId = hash.split('/')[1];
+        if (typeof window._softRefreshEditorDetail === 'function') {
+          window._softRefreshEditorDetail(editorId);
+        }
+      } else {
+        _doRefresh();
+      }
+    }, 500);
   }
 
   function _handleChange(section) {
-    // Skip if this is likely our own change
+    // Drop — soft refresh from markLocalSave already handled it
     if (Date.now() - _lastLocalSave < COOLDOWN) return;
 
     // Don't disrupt user mid-edit
@@ -91,9 +112,11 @@ var Realtime = (function() {
 
       if (hash.startsWith('editors/')) {
         var editorId = hash.split('/')[1];
-        if (typeof window.initEditorDetail === 'function') {
-          await window.initEditorDetail({ id: editorId });
-        }
+        await _fadeRefreshDetail('editor-detail-view', function() {
+          if (typeof window.initEditorDetail === 'function') {
+            return window.initEditorDetail({ id: editorId });
+          }
+        });
       } else if (hash === 'editors' || hash === '') {
         // Only refresh editors list if we're on that page
         if (hash === 'editors' && typeof window.initEditorsList === 'function') {
@@ -101,18 +124,24 @@ var Realtime = (function() {
         }
       } else if (hash.startsWith('clients/')) {
         var leadId = hash.split('/')[1];
-        if (typeof window.initClientDetail === 'function') {
-          await window.initClientDetail({ id: leadId });
-        }
+        await _fadeRefreshDetail('client-detail-view', function() {
+          if (typeof window._loadClientDetailFull === 'function') {
+            return window._loadClientDetailFull(leadId);
+          } else if (typeof window.initClientDetail === 'function') {
+            return window.initClientDetail({ id: leadId });
+          }
+        });
       } else if (hash === 'clients') {
         if (typeof window.initClientsList === 'function') {
           await window.initClientsList();
         }
       } else if (hash.startsWith('photographers/')) {
         var photographerId = hash.split('/')[1];
-        if (typeof window.initPhotographerDetail === 'function') {
-          await window.initPhotographerDetail({ id: photographerId });
-        }
+        await _fadeRefreshDetail('photographer-detail-view', function() {
+          if (typeof window.initPhotographerDetail === 'function') {
+            return window.initPhotographerDetail({ id: photographerId });
+          }
+        });
       } else if (hash === 'photographers') {
         if (typeof window.initPhotographersList === 'function') {
           await window.initPhotographersList();
@@ -130,6 +159,19 @@ var Realtime = (function() {
     _isRefreshing = false;
   }
 
+  async function _fadeRefreshDetail(containerId, refreshFn) {
+    var container = document.getElementById(containerId);
+    if (container) {
+      container.style.transition = 'opacity 0.15s';
+      container.style.opacity = '0';
+    }
+    await refreshFn();
+    setTimeout(function() {
+      var c = document.getElementById(containerId);
+      if (c) c.style.opacity = '1';
+    }, 80);
+  }
+
   function _isUserEditing() {
     var active = document.activeElement;
     if (active) {
@@ -143,6 +185,10 @@ var Realtime = (function() {
     if (_refreshTimer) {
       clearTimeout(_refreshTimer);
       _refreshTimer = null;
+    }
+    if (_postSaveTimer) {
+      clearTimeout(_postSaveTimer);
+      _postSaveTimer = null;
     }
     if (_channel) {
       supabase.removeChannel(_channel);

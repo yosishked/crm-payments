@@ -484,6 +484,63 @@ var Clients = (function() {
   }
 
   // ==================================
+  // SOFT REFRESH (update sidebar card + summary, no detail DOM rebuild)
+  // ==================================
+
+  window._softRefreshClientDetail = async function(leadId) {
+    // Invalidate caches so we fetch fresh data
+    API.invalidateCache('client_leads');
+    AppState.set('clientLeads', null);
+
+    var leads = await API.fetchClientLeads();
+    var eventLogs = await API.fetchAllEventLogs(leads.map(function(l) { return l.id; }));
+    var teamMap = AppState.get('clientTeamMap') || {};
+
+    AppState.set('clientLeads', leads);
+    AppState.set('clientEventLogs', eventLogs);
+
+    var lead = leads.find(function(l) { return l.id === leadId; });
+    if (!lead) return;
+
+    var log = eventLogs[leadId] || null;
+    var totalWithVat = _calcTotalWithVat(lead, log);
+
+    // Fetch fresh transactions
+    var transactions = await API.fetchClientTransactions(leadId);
+    var paid = transactions.reduce(function(sum, tx) { return sum + (tx.amount || 0); }, 0);
+    var balance = totalWithVat - paid;
+
+    // 1. Update sidebar list card (replaceWith — no full list rebuild)
+    var oldCard = document.querySelector('.client-card[data-client-id="' + leadId + '"]');
+    if (oldCard) {
+      // Note: _renderClientCard uses UI.escapeHtml on all values
+      var temp = document.createElement('div');
+      temp.innerHTML = _renderClientCard(lead, totalWithVat, paid, balance, teamMap);
+      var newCard = temp.firstElementChild;
+      if (newCard) {
+        if (oldCard.classList.contains('client-card-active')) {
+          newCard.classList.add('client-card-active');
+        }
+        oldCard.replaceWith(newCard);
+      }
+    }
+
+    // 2. Update detail view (silent re-render — no spinner, no fade)
+    var detailContainer = document.getElementById('client-detail-view');
+    if (detailContainer) {
+      _renderClientDetail(detailContainer, lead, log, transactions);
+    }
+  };
+
+  // Full load exposed for realtime remote refresh (with fade handled by realtime.js)
+  window._loadClientDetailFull = async function(leadId) {
+    _currentLeadId = leadId;
+    _highlightSelected(leadId);
+    // _softRefreshClientDetail updates both sidebar card AND detail view
+    await window._softRefreshClientDetail(leadId);
+  };
+
+  // ==================================
   // MODALS
   // ==================================
 
@@ -551,8 +608,7 @@ var Clients = (function() {
           }
         }
 
-        await _loadClientDetail(leadId, true);
-        await window.initClientsList();
+        // markLocalSave() schedules soft refresh — no full rebuild needed
       }
     });
   }
@@ -603,8 +659,7 @@ var Clients = (function() {
             });
           }
 
-          await _loadClientDetail(leadId, true);
-          await window.initClientsList();
+          // markLocalSave() schedules soft refresh — no full rebuild needed
         }
       });
     });
@@ -631,8 +686,7 @@ var Clients = (function() {
           }
 
           await API.deleteClientTransaction(txId);
-          await _loadClientDetail(leadId, true);
-          await window.initClientsList();
+          // markLocalSave() schedules soft refresh — no full rebuild needed
         }
       });
     });
@@ -654,7 +708,7 @@ var Clients = (function() {
         var updates = {};
         updates[fieldName] = formData.value || 0;
 
-        Realtime.markLocalSave();
+        Realtime.markLocalSave(); // Start cooldown (block realtime echo)
         var { error } = await supabase
           .from('crm_leads')
           .update(updates)
@@ -666,11 +720,10 @@ var Clients = (function() {
         }
         UI.toast('עודכן', 'success');
 
-        // Clear caches and refresh silently (no spinner)
+        // Clear caches, then schedule soft refresh
         API.invalidateCache('client_leads');
         AppState.set('clientLeads', null);
-        await _loadClientDetail(leadId, true);
-        await window.initClientsList();
+        Realtime.markLocalSave();
       }
     });
   }

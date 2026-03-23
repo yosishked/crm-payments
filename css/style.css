@@ -2703,23 +2703,7 @@ textarea.form-input {
   }
 }
 
-.summary-card {
-  animation: fadeSlideIn 0.25s ease-out;
-}
-
-.tabs-container {
-  animation: fadeSlideIn 0.3s ease-out 0.05s both;
-}
-
-.lead-card {
-  animation: fadeSlideIn 0.2s ease-out both;
-}
-
-/* Stagger card animations */
-.leads-group .lead-card:nth-child(2) { animation-delay: 0.03s; }
-.leads-group .lead-card:nth-child(3) { animation-delay: 0.06s; }
-.leads-group .lead-card:nth-child(4) { animation-delay: 0.09s; }
-.leads-group .lead-card:nth-child(5) { animation-delay: 0.12s; }
+/* summary-card, tabs-container, lead-card — no fadeSlideIn (soft refresh pattern) */
 
 /* ---- Field flash animation (price pull) ---- */
 .field-flash {
