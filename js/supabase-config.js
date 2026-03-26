@@ -44,9 +44,11 @@ var supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 });
 
 // Apply SSO session if received from another module
+var _ssoReady = null;
 if (_ssoToken && _ssoRefresh) {
-  supabase.auth.setSession({ access_token: _ssoToken, refresh_token: _ssoRefresh }).then(function(res) {
+  _ssoReady = supabase.auth.setSession({ access_token: _ssoToken, refresh_token: _ssoRefresh }).then(function(res) {
     if (res.error) console.error('SSO session error:', res.error);
+    return res;
   });
 }
 
