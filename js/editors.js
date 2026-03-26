@@ -410,7 +410,7 @@ var Editors = (function() {
           : '-';
 
         var edTxSS = screenshotByEditorTxId[tx.id] || '';
-        var edTxThumb = edTxSS ? '<img src="' + UI.escapeHtml(edTxSS) + '" alt="" style="max-height:36px;border-radius:4px;cursor:pointer;border:1px solid #eee" onclick="event.stopPropagation(); UI.lightbox(this.src)">' : '';
+        var edTxThumb = edTxSS ? '<img src="' + UI.escapeHtml(edTxSS) + '" alt="" loading="lazy" style="max-height:36px;border-radius:4px;cursor:pointer;border:1px solid #eee" onclick="event.stopPropagation(); UI.lightbox(this.src)">' : '';
 
         html += '<tr>' +
           '<td>' + UI.formatDate(tx.effective_date) + '</td>' +

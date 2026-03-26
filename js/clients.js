@@ -284,7 +284,7 @@ var Clients = (function() {
     var [eventLog, transactions, paySubmissions] = await Promise.all([
       API.fetchEventLog(leadId),
       API.fetchClientTransactions(leadId),
-      supabase.from('crm_payment_submissions').select('client_transaction_id, transfer_screenshot').eq('lead_id', leadId).not('client_transaction_id', 'is', null).then(function(r) { return r.data || []; })
+      supabase.from('crm_payment_submissions').select('client_transaction_id, transfer_screenshot').eq('lead_id', leadId).not('client_transaction_id', 'is', null).not('transfer_screenshot', 'like', 'data:%').then(function(r) { return r.data || []; })
     ]);
     if (myVersion !== _detailVersion) return;
 
@@ -458,7 +458,7 @@ var Clients = (function() {
           : UI.badge('CRM', 'info');
 
         var txSS = screenshotByTxId[tx.id] || '';
-        var txThumb = txSS ? '<img src="' + UI.escapeHtml(txSS) + '" alt="" style="max-height:36px;border-radius:4px;cursor:pointer;border:1px solid #eee" onclick="UI.lightbox(this.src)">' : '';
+        var txThumb = txSS ? '<img src="' + UI.escapeHtml(txSS) + '" alt="" loading="lazy" style="max-height:36px;border-radius:4px;cursor:pointer;border:1px solid #eee" onclick="UI.lightbox(this.src)">' : '';
 
         html += '<tr>' +
           '<td>' + UI.formatDate(tx.created_at) + '</td>' +
