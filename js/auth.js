@@ -196,6 +196,17 @@ setInterval(function() {
   }
 }, 10 * 60 * 1000);
 
+// ---- SSO: intercept external nav links ----
+document.querySelectorAll('.nav-external, .mobile-nav-item[href^="https://"]').forEach(function(link) {
+  link.addEventListener('click', function(e) {
+    e.preventDefault();
+    var href = link.getAttribute('href');
+    buildSsoUrl(href).then(function(ssoUrl) {
+      window.location.href = ssoUrl;
+    });
+  });
+});
+
 // ---- Update user UI ----
 function _updateUserUI(user) {
   var meta = user.user_metadata || {};
