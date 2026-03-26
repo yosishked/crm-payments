@@ -158,8 +158,6 @@ function _hideAccessDenied() {
 
 // ---- Initialize: check existing session on page load ----
 (async function() {
-  if (_ssoReady) await _ssoReady;
-
   var { data } = await supabase.auth.getSession();
   if (data && data.session && !currentUser) {
     var session = data.session;
