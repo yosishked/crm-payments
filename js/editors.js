@@ -771,8 +771,11 @@ var Editors = (function() {
       onConfirm: async function() {
         Realtime.markLocalSave();
 
-        // Delete linked client transaction first (clear FK before deleting editor tx)
+        // Delete linked client transaction + its payment submission
         if (isLinked) {
+          await supabase.from('crm_payment_submissions')
+            .delete()
+            .eq('client_transaction_id', linkedClientTx.id);
           await API.deleteClientTransaction(linkedClientTx.id);
         }
 

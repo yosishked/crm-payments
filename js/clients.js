@@ -685,6 +685,11 @@ var Clients = (function() {
             await API.deleteEditorTransaction(tx.linked_editor_transaction_id);
           }
 
+          // Delete linked payment submission if exists
+          await supabase.from('crm_payment_submissions')
+            .delete()
+            .eq('client_transaction_id', txId);
+
           await API.deleteClientTransaction(txId);
           // markLocalSave() schedules soft refresh — no full rebuild needed
         }
