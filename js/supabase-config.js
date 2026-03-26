@@ -20,21 +20,28 @@ if (typeof navigator !== 'undefined' && navigator.locks) {
 var _savedRouteHash = window.location.hash || '';
 var _isAuthHash = _savedRouteHash.indexOf('access_token=') > -1 || _savedRouteHash.indexOf('refresh_token=') > -1;
 
-// Check for cross-domain SSO token in hash (format: #sso_token=ACCESS&sso_refresh=REFRESH&ROUTE)
+// ---- Cross-domain SSO via cookie on .yossishaked.net ----
 var _ssoToken = null;
 var _ssoRefresh = null;
-if (_savedRouteHash.indexOf('sso_token=') > -1) {
-  var ssoMatch = _savedRouteHash.match(/sso_token=([^&]+)/);
-  var ssoRefreshMatch = _savedRouteHash.match(/sso_refresh=([^&]+)/);
-  var ssoRouteMatch = _savedRouteHash.match(/sso_route=([^&]*)/);
-  if (ssoMatch) _ssoToken = decodeURIComponent(ssoMatch[1]);
-  if (ssoRefreshMatch) _ssoRefresh = decodeURIComponent(ssoRefreshMatch[1]);
-  // Restore clean route hash
-  _savedRouteHash = ssoRouteMatch ? '#' + decodeURIComponent(ssoRouteMatch[1]) : '';
-  _isAuthHash = false;
-  // Clean URL immediately
-  window.history.replaceState(null, '', window.location.pathname + (_savedRouteHash || ''));
-}
+
+// Read SSO cookie if exists
+(function() {
+  var cookies = document.cookie.split(';');
+  for (var i = 0; i < cookies.length; i++) {
+    var c = cookies[i].trim();
+    if (c.indexOf('crm_sso_token=') === 0) {
+      _ssoToken = decodeURIComponent(c.substring('crm_sso_token='.length));
+    }
+    if (c.indexOf('crm_sso_refresh=') === 0) {
+      _ssoRefresh = decodeURIComponent(c.substring('crm_sso_refresh='.length));
+    }
+  }
+  // Delete SSO cookies immediately (one-time use)
+  if (_ssoToken) {
+    document.cookie = 'crm_sso_token=; domain=.yossishaked.net; path=/; max-age=0; SameSite=Lax; Secure';
+    document.cookie = 'crm_sso_refresh=; domain=.yossishaked.net; path=/; max-age=0; SameSite=Lax; Secure';
+  }
+})();
 
 // window.supabase הוא ה-SDK, יוצרים client ושומרים עליו
 var supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -57,16 +64,15 @@ if (!_isAuthHash && _savedRouteHash && window.location.hash !== _savedRouteHash)
   window.location.hash = _savedRouteHash;
 }
 
-// Helper: build SSO URL for cross-module navigation
-function buildSsoUrl(targetUrl) {
-  return supabase.auth.getSession().then(function(res) {
+// Helper: write SSO cookie and navigate to another module
+function navigateWithSso(targetUrl) {
+  supabase.auth.getSession().then(function(res) {
     var session = res.data && res.data.session;
-    if (!session) return targetUrl;
-    var hash = targetUrl.indexOf('#') > -1 ? targetUrl.split('#')[1] : '';
-    var base = targetUrl.split('#')[0];
-    var ssoHash = 'sso_token=' + encodeURIComponent(session.access_token) +
-      '&sso_refresh=' + encodeURIComponent(session.refresh_token) +
-      '&sso_route=' + encodeURIComponent(hash);
-    return base + '#' + ssoHash;
+    if (session) {
+      // Cookie expires in 30 seconds — just enough for the redirect
+      document.cookie = 'crm_sso_token=' + encodeURIComponent(session.access_token) + '; domain=.yossishaked.net; path=/; max-age=30; SameSite=Lax; Secure';
+      document.cookie = 'crm_sso_refresh=' + encodeURIComponent(session.refresh_token) + '; domain=.yossishaked.net; path=/; max-age=30; SameSite=Lax; Secure';
+    }
+    window.location.href = targetUrl;
   });
 }
