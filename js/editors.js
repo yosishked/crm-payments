@@ -198,11 +198,40 @@ var Editors = (function() {
       }
     }
 
+    // Fetch screenshots for editor transactions (via linked client transactions)
+    var editorTxIds = transactions.map(function(t) { return t.id; });
+    var editorScreenshotMap = {};
+    if (editorTxIds.length > 0) {
+      var { data: linkedClientTxs } = await supabase
+        .from('crm_client_transactions')
+        .select('id, linked_editor_transaction_id')
+        .in('linked_editor_transaction_id', editorTxIds);
+      if (myVersion !== _detailVersion) return;
+      if (linkedClientTxs && linkedClientTxs.length > 0) {
+        var clientTxIds = linkedClientTxs.map(function(c) { return c.id; });
+        var { data: subs } = await supabase
+          .from('crm_payment_submissions')
+          .select('client_transaction_id, transfer_screenshot')
+          .in('client_transaction_id', clientTxIds);
+        if (myVersion !== _detailVersion) return;
+        if (subs) {
+          // Map: client_tx_id → screenshot
+          var subMap = {};
+          subs.forEach(function(s) { if (s.transfer_screenshot) subMap[s.client_transaction_id] = s.transfer_screenshot; });
+          // Map: editor_tx_id → screenshot (via linked client tx)
+          linkedClientTxs.forEach(function(c) {
+            if (subMap[c.id]) editorScreenshotMap[c.linked_editor_transaction_id] = subMap[c.id];
+          });
+        }
+      }
+    }
+
     _expandedLeadId = _expandedLeadId; // preserve expanded state
-    _renderEditorDetail(container, editor, leads, transactions);
+    _renderEditorDetail(container, editor, leads, transactions, editorScreenshotMap);
   }
 
-  function _renderEditorDetail(container, editor, leads, transactions) {
+  function _renderEditorDetail(container, editor, leads, transactions, screenshotByEditorTxId) {
+    screenshotByEditorTxId = screenshotByEditorTxId || {};
     var name = (editor.first_name || '') + ' ' + (editor.last_name || '');
 
     // Group transactions by lead_id
@@ -324,7 +353,7 @@ var Editors = (function() {
         // Expanded transactions row
         if (isExpanded) {
           html += '<tr class="transactions-detail-row"><td colspan="9">';
-          html += _renderLeadTransactions(editor.id, lead, row.transactions);
+          html += _renderLeadTransactions(editor.id, lead, row.transactions, screenshotByEditorTxId);
           html += '</td></tr>';
         }
       }
@@ -349,7 +378,8 @@ var Editors = (function() {
   // LEAD TRANSACTIONS (expanded row)
   // ============================================
 
-  function _renderLeadTransactions(editorId, lead, transactions) {
+  function _renderLeadTransactions(editorId, lead, transactions, screenshotByEditorTxId) {
+    screenshotByEditorTxId = screenshotByEditorTxId || {};
     var couple = (lead.groom_first_name || '') + ' & ' + (lead.bride_first_name || '');
     var eid = UI.escapeHtml(editorId);
     var lid = UI.escapeHtml(lead.id);
@@ -362,7 +392,7 @@ var Editors = (function() {
       html += '<p class="empty-note">' + UI.escapeHtml('אין תנועות') + '</p>';
     } else {
       html += '<div class="responsive-table-wrap"><table class="data-table data-table-sm">';
-      html += '<thead><tr><th>' + UI.escapeHtml('תאריך') + '</th><th>' + UI.escapeHtml('סוג') + '</th><th>' + UI.escapeHtml('סכום') + '</th><th>' + UI.escapeHtml('אמצעי תשלום') + '</th><th>' + UI.escapeHtml('הערות') + '</th><th></th></tr></thead><tbody>';
+      html += '<thead><tr><th>' + UI.escapeHtml('תאריך') + '</th><th>' + UI.escapeHtml('סוג') + '</th><th>' + UI.escapeHtml('סכום') + '</th><th>' + UI.escapeHtml('אמצעי תשלום') + '</th><th>' + UI.escapeHtml('הערות') + '</th><th>' + UI.escapeHtml('אישור') + '</th><th></th></tr></thead><tbody>';
 
       for (var i = 0; i < transactions.length; i++) {
         var tx = transactions[i];
@@ -379,12 +409,16 @@ var Editors = (function() {
           ? '<span class="pay-type-badge ' + payClass + '">' + UI.escapeHtml(tx.payment_type) + '</span>'
           : '-';
 
+        var edTxSS = screenshotByEditorTxId[tx.id] || '';
+        var edTxThumb = edTxSS ? '<img src="' + UI.escapeHtml(edTxSS) + '" alt="" style="max-height:36px;border-radius:4px;cursor:pointer;border:1px solid #eee" onclick="event.stopPropagation(); UI.lightbox(this.src)">' : '';
+
         html += '<tr>' +
           '<td>' + UI.formatDate(tx.effective_date) + '</td>' +
           '<td><span class="pay-type-badge ' + typeClass + '">' + UI.escapeHtml(tx.transaction_type || '-') + '</span></td>' +
           '<td>' + UI.formatCurrency(tx.amount) + '</td>' +
           '<td>' + payHtml + '</td>' +
           '<td>' + UI.escapeHtml(tx.notes || '-') + '</td>' +
+          '<td>' + edTxThumb + '</td>' +
           '<td>' + (isAdmin() ? '<button class="btn-icon" onclick="event.stopPropagation(); Editors.editTransaction(\'' + UI.escapeHtml(tx.id) + '\', \'' + eid + '\', \'' + lid + '\')" title="ערוך"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>' +
             '<button class="btn-icon btn-icon-danger" onclick="event.stopPropagation(); Editors.deleteTransaction(\'' + UI.escapeHtml(tx.id) + '\', \'' + eid + '\')" title="מחק"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>' : '') + '</td>' +
         '</tr>';

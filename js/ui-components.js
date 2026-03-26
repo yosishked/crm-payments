@@ -198,6 +198,33 @@ var UI = (function() {
     if (banner) banner.remove();
   }
 
+  function openLightbox(src) {
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:10000;padding:20px;cursor:pointer';
+    var closeBtn = document.createElement('button');
+    closeBtn.textContent = '✕';
+    closeBtn.style.cssText = 'position:absolute;top:16px;right:16px;background:rgba(255,255,255,0.2);color:#fff;border:none;width:36px;height:36px;border-radius:50%;font-size:18px;cursor:pointer;z-index:10001;display:flex;align-items:center;justify-content:center';
+    overlay.appendChild(closeBtn);
+    var img = document.createElement('img');
+    img.src = src;
+    img.style.cssText = 'max-width:90%;max-height:90%;border-radius:8px;object-fit:contain;touch-action:none;transition:transform 0.1s';
+    overlay.appendChild(img);
+    var scale = 1, lastScale = 1, posX = 0, posY = 0, isDragging = false, dragStartX = 0, dragStartY = 0, pinchStartDist = 0;
+    img.addEventListener('touchstart', function(e) {
+      if (e.touches.length === 2) { e.preventDefault(); pinchStartDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); lastScale = scale; }
+      else if (e.touches.length === 1 && scale > 1) { isDragging = true; dragStartX = e.touches[0].clientX - posX; dragStartY = e.touches[0].clientY - posY; }
+    }, { passive: false });
+    img.addEventListener('touchmove', function(e) {
+      if (e.touches.length === 2) { e.preventDefault(); var dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); scale = Math.min(Math.max(lastScale * (dist / pinchStartDist), 1), 5); img.style.transform = 'scale(' + scale + ') translate(' + posX / scale + 'px,' + posY / scale + 'px)'; }
+      else if (e.touches.length === 1 && isDragging && scale > 1) { e.preventDefault(); posX = e.touches[0].clientX - dragStartX; posY = e.touches[0].clientY - dragStartY; img.style.transform = 'scale(' + scale + ') translate(' + posX / scale + 'px,' + posY / scale + 'px)'; }
+    }, { passive: false });
+    img.addEventListener('touchend', function() { lastScale = scale; isDragging = false; if (scale <= 1) { posX = 0; posY = 0; } });
+    function close() { if (document.body.contains(overlay)) document.body.removeChild(overlay); }
+    closeBtn.addEventListener('click', function(e) { e.stopPropagation(); close(); });
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) close(); });
+    document.body.appendChild(overlay);
+  }
+
   return {
     escapeHtml: escapeHtml,
     badge: badge,
@@ -215,6 +242,7 @@ var UI = (function() {
     debounce: debounce,
     conflictBanner: conflictBanner,
     dismissConflictBanner: dismissConflictBanner,
-    icon: icon
+    icon: icon,
+    lightbox: openLightbox
   };
 })();
