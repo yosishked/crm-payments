@@ -284,7 +284,7 @@ var Clients = (function() {
     var [eventLog, transactions, paySubmissions] = await Promise.all([
       API.fetchEventLog(leadId),
       API.fetchClientTransactions(leadId),
-      supabase.from('crm_payment_submissions').select('client_transaction_id, transfer_screenshot').eq('lead_id', leadId).not('client_transaction_id', 'is', null).not('transfer_screenshot', 'like', 'data:%').then(function(r) { return r.data || []; })
+      supabase.from('crm_payment_submissions').select('client_transaction_id, transfer_screenshot').eq('lead_id', leadId).not('client_transaction_id', 'is', null).like('transfer_screenshot', 'https://%').then(function(r) { return r.data || []; })
     ]);
     if (myVersion !== _detailVersion) return;
 
