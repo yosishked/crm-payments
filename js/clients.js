@@ -290,6 +290,17 @@ var Clients = (function() {
     _renderClientDetail(container, lead, eventLog, transactions, {});
 
     // Load screenshots async (after render, so page loads fast)
+    // 1. Direct screenshots on transactions
+    transactions.forEach(function(tx) {
+      if (tx.transfer_screenshot && tx.transfer_screenshot.startsWith('https://')) {
+        var cell = document.querySelector('td[data-tx-ss="' + tx.id + '"]');
+        if (cell) {
+          var thumb = UI.screenshotThumb(tx.transfer_screenshot);
+          if (thumb) cell.appendChild(thumb);
+        }
+      }
+    });
+    // 2. Screenshots from payment_submissions (as before)
     supabase.from('crm_payment_submissions')
       .select('client_transaction_id, transfer_screenshot')
       .eq('lead_id', leadId)
@@ -302,13 +313,8 @@ var Clients = (function() {
         subs.forEach(function(s) {
           var cell = document.querySelector('td[data-tx-ss="' + s.client_transaction_id + '"]');
           if (cell) {
-            var img = document.createElement('img');
-            img.src = s.transfer_screenshot;
-            img.alt = '';
-            img.loading = 'lazy';
-            img.style.cssText = 'max-height:36px;border-radius:4px;cursor:pointer;border:1px solid #eee';
-            img.onclick = function() { UI.lightbox(img.src); };
-            cell.appendChild(img);
+            var thumb = UI.screenshotThumb(s.transfer_screenshot);
+            if (thumb) cell.appendChild(thumb);
           }
         });
       });
@@ -584,6 +590,7 @@ var Clients = (function() {
       sourceOptions.push({ value: 'client_to_editor', label: 'לקוח לעורכת' });
     }
 
+    var _uploadArea = null;
     FormHelpers.openEditModal({
       title: 'הוספת תשלום',
       screen: 'payments',
@@ -603,8 +610,18 @@ var Clients = (function() {
         ]
       }],
       data: { source: 'crm' },
+      afterRender: function(body) {
+        _uploadArea = UI.createUploadArea();
+        body.appendChild(_uploadArea.element);
+      },
       onSave: async function(formData) {
         var source = formData.source || 'crm';
+
+        // Upload screenshot if provided
+        var screenshotUrl = null;
+        if (_uploadArea && _uploadArea.getFile()) {
+          screenshotUrl = await UI.uploadScreenshot(_uploadArea.getFile(), leadId);
+        }
 
         Realtime.markLocalSave();
         var clientTx = await API.createClientTransaction({
@@ -612,7 +629,8 @@ var Clients = (function() {
           amount: formData.amount,
           payment_method: formData.payment_method,
           source: source,
-          notes: formData.notes || null
+          notes: formData.notes || null,
+          transfer_screenshot: screenshotUrl
         });
 
         // If "client to editor" — also create editor transaction and link them
@@ -624,7 +642,8 @@ var Clients = (function() {
             amount: formData.amount,
             payment_type: formData.payment_method,
             effective_date: new Date().toISOString().split('T')[0],
-            notes: formData.notes || null
+            notes: formData.notes || null,
+            transfer_screenshot: screenshotUrl
           });
 
           // Save the link on client transaction
@@ -648,6 +667,7 @@ var Clients = (function() {
         return;
       }
 
+      var _uploadArea = null;
       FormHelpers.openEditModal({
         title: 'עריכת תשלום',
         screen: 'payments',
@@ -669,12 +689,29 @@ var Clients = (function() {
             { name: 'notes', label: 'הערות', type: 'textarea' }
           ]
         }],
+        afterRender: function(body) {
+          _uploadArea = UI.createUploadArea(tx.transfer_screenshot || null);
+          body.appendChild(_uploadArea.element);
+        },
         onSave: async function(formData) {
+          // Handle screenshot changes
+          var screenshotUrl = tx.transfer_screenshot || null;
+          if (_uploadArea.getFile()) {
+            // New file uploaded — delete old if exists, upload new
+            if (screenshotUrl) await UI.deleteScreenshotStorage(screenshotUrl);
+            screenshotUrl = await UI.uploadScreenshot(_uploadArea.getFile(), leadId);
+          } else if (_uploadArea.wasRemoved()) {
+            // Removed — delete old
+            if (screenshotUrl) await UI.deleteScreenshotStorage(screenshotUrl);
+            screenshotUrl = null;
+          }
+
           Realtime.markLocalSave();
           await API.updateClientTransaction(txId, {
             amount: formData.amount,
             payment_method: formData.payment_method,
-            notes: formData.notes || null
+            notes: formData.notes || null,
+            transfer_screenshot: screenshotUrl
           });
 
           // If linked to editor transaction, update it too
@@ -682,7 +719,8 @@ var Clients = (function() {
             await API.updateEditorTransaction(tx.linked_editor_transaction_id, {
               amount: formData.amount,
               payment_type: formData.payment_method,
-              notes: formData.notes || null
+              notes: formData.notes || null,
+              transfer_screenshot: screenshotUrl
             });
           }
 
@@ -694,7 +732,7 @@ var Clients = (function() {
 
   function deletePayment(txId, leadId) {
     // First fetch the transaction to check if it's linked
-    supabase.from('crm_client_transactions').select('linked_editor_transaction_id, source').eq('id', txId).single().then(function(result) {
+    supabase.from('crm_client_transactions').select('linked_editor_transaction_id, source, transfer_screenshot').eq('id', txId).single().then(function(result) {
       var tx = result.data;
       var isLinked = tx && tx.linked_editor_transaction_id;
       var message = isLinked
@@ -709,6 +747,9 @@ var Clients = (function() {
 
           // Delete linked editor transaction first (before client tx, due to FK)
           if (isLinked) {
+            // Also delete editor tx screenshot if exists
+            var { data: edTx } = await supabase.from('crm_editor_transactions').select('transfer_screenshot').eq('id', tx.linked_editor_transaction_id).maybeSingle();
+            if (edTx && edTx.transfer_screenshot) await UI.deleteScreenshotStorage(edTx.transfer_screenshot);
             await API.deleteEditorTransaction(tx.linked_editor_transaction_id);
           }
 
@@ -722,6 +763,9 @@ var Clients = (function() {
             }
             await supabase.from('crm_payment_submissions').delete().eq('id', linkedSub.id);
           }
+
+          // Delete transaction screenshot if exists
+          if (tx.transfer_screenshot) await UI.deleteScreenshotStorage(tx.transfer_screenshot);
 
           await API.deleteClientTransaction(txId);
           // markLocalSave() schedules soft refresh — no full rebuild needed

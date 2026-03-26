@@ -295,6 +295,11 @@ var FormHelpers = (function() {
     // Initialize color_select dropdowns
     _initColorSelects(overlay);
 
+    // afterRender callback — allows appending custom DOM (e.g. upload area)
+    if (config.afterRender) {
+      config.afterRender(overlay.querySelector('#edit-modal-body'), overlay);
+    }
+
     function closeModal() {
       overlay.classList.remove('edit-modal-visible');
       setTimeout(function() {

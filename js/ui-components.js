@@ -199,30 +199,193 @@ var UI = (function() {
   }
 
   function openLightbox(src) {
+    var isPdf = src && /\.pdf(\?|$)/i.test(src);
     var overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:10000;padding:20px;cursor:pointer';
     var closeBtn = document.createElement('button');
-    closeBtn.textContent = '✕';
+    closeBtn.textContent = '\u2715';
     closeBtn.style.cssText = 'position:absolute;top:16px;right:16px;background:rgba(255,255,255,0.2);color:#fff;border:none;width:36px;height:36px;border-radius:50%;font-size:18px;cursor:pointer;z-index:10001;display:flex;align-items:center;justify-content:center';
     overlay.appendChild(closeBtn);
-    var img = document.createElement('img');
-    img.src = src;
-    img.style.cssText = 'max-width:90%;max-height:90%;border-radius:8px;object-fit:contain;touch-action:none;transition:transform 0.1s';
-    overlay.appendChild(img);
-    var scale = 1, lastScale = 1, posX = 0, posY = 0, isDragging = false, dragStartX = 0, dragStartY = 0, pinchStartDist = 0;
-    img.addEventListener('touchstart', function(e) {
-      if (e.touches.length === 2) { e.preventDefault(); pinchStartDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); lastScale = scale; }
-      else if (e.touches.length === 1 && scale > 1) { isDragging = true; dragStartX = e.touches[0].clientX - posX; dragStartY = e.touches[0].clientY - posY; }
-    }, { passive: false });
-    img.addEventListener('touchmove', function(e) {
-      if (e.touches.length === 2) { e.preventDefault(); var dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); scale = Math.min(Math.max(lastScale * (dist / pinchStartDist), 1), 5); img.style.transform = 'scale(' + scale + ') translate(' + posX / scale + 'px,' + posY / scale + 'px)'; }
-      else if (e.touches.length === 1 && isDragging && scale > 1) { e.preventDefault(); posX = e.touches[0].clientX - dragStartX; posY = e.touches[0].clientY - dragStartY; img.style.transform = 'scale(' + scale + ') translate(' + posX / scale + 'px,' + posY / scale + 'px)'; }
-    }, { passive: false });
-    img.addEventListener('touchend', function() { lastScale = scale; isDragging = false; if (scale <= 1) { posX = 0; posY = 0; } });
+
+    if (isPdf) {
+      var iframe = document.createElement('iframe');
+      iframe.src = src;
+      iframe.style.cssText = 'width:90%;height:90%;border:none;border-radius:8px;background:#fff';
+      overlay.appendChild(iframe);
+    } else {
+      var img = document.createElement('img');
+      img.src = src;
+      img.style.cssText = 'max-width:90%;max-height:90%;border-radius:8px;object-fit:contain;touch-action:none;transition:transform 0.1s';
+      overlay.appendChild(img);
+      var scale = 1, lastScale = 1, posX = 0, posY = 0, isDragging = false, dragStartX = 0, dragStartY = 0, pinchStartDist = 0;
+      img.addEventListener('touchstart', function(e) {
+        if (e.touches.length === 2) { e.preventDefault(); pinchStartDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); lastScale = scale; }
+        else if (e.touches.length === 1 && scale > 1) { isDragging = true; dragStartX = e.touches[0].clientX - posX; dragStartY = e.touches[0].clientY - posY; }
+      }, { passive: false });
+      img.addEventListener('touchmove', function(e) {
+        if (e.touches.length === 2) { e.preventDefault(); var dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); scale = Math.min(Math.max(lastScale * (dist / pinchStartDist), 1), 5); img.style.transform = 'scale(' + scale + ') translate(' + posX / scale + 'px,' + posY / scale + 'px)'; }
+        else if (e.touches.length === 1 && isDragging && scale > 1) { e.preventDefault(); posX = e.touches[0].clientX - dragStartX; posY = e.touches[0].clientY - dragStartY; img.style.transform = 'scale(' + scale + ') translate(' + posX / scale + 'px,' + posY / scale + 'px)'; }
+      }, { passive: false });
+      img.addEventListener('touchend', function() { lastScale = scale; isDragging = false; if (scale <= 1) { posX = 0; posY = 0; } });
+    }
     function close() { if (document.body.contains(overlay)) document.body.removeChild(overlay); }
     closeBtn.addEventListener('click', function(e) { e.stopPropagation(); close(); });
     overlay.addEventListener('click', function(e) { if (e.target === overlay) close(); });
     document.body.appendChild(overlay);
+  }
+
+  // ---- PDF icon SVG for thumbnails ----
+  var PDF_ICON_SVG = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="48" viewBox="0 0 40 48"><rect fill="#f0f0f0" width="40" height="48" rx="4"/><text x="20" y="28" text-anchor="middle" font-size="12" font-weight="bold" fill="#e53e3e">PDF</text></svg>');
+
+  // ---- Screenshot thumbnail helper (returns DOM element or empty string) ----
+  function screenshotThumb(url) {
+    if (!url || url.startsWith('data:')) return '';
+    var isPdf = /\.pdf(\?|$)/i.test(url);
+    var el = document.createElement('img');
+    el.src = isPdf ? PDF_ICON_SVG : url;
+    el.alt = isPdf ? 'PDF' : '';
+    el.loading = 'lazy';
+    el.style.cssText = 'max-height:36px;border-radius:4px;cursor:pointer;border:1px solid #eee';
+    el.onclick = function(e) { e.stopPropagation(); openLightbox(url); };
+    return el;
+  }
+
+  // ---- Image compression (from payment-form pattern) ----
+  function compressImage(file, maxWidth, quality, callback) {
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      var img = new Image();
+      img.onload = function() {
+        var canvas = document.createElement('canvas');
+        var w = img.width, h = img.height;
+        if (w > maxWidth) { h = Math.round(h * maxWidth / w); w = maxWidth; }
+        canvas.width = w;
+        canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        canvas.toBlob(function(blob) {
+          if (!blob) { callback(file, e.target.result); return; }
+          var compressedFile = new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' });
+          callback(compressedFile, URL.createObjectURL(blob));
+        }, 'image/jpeg', quality);
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // ---- Upload area for transaction screenshots ----
+  function createUploadArea(existingUrl) {
+    var _file = null;
+    var _removed = false;
+    var _existingUrl = existingUrl || null;
+
+    var wrapper = document.createElement('div');
+    wrapper.className = 'tx-upload-area';
+
+    var placeholder = document.createElement('div');
+    placeholder.className = 'tx-upload-placeholder';
+    var phIcon = document.createElement('span');
+    phIcon.textContent = '\uD83D\uDCF7';
+    phIcon.style.cssText = 'font-size:16px;opacity:0.5';
+    var phText = document.createElement('span');
+    phText.textContent = '\u05E6\u05D9\u05DC\u05D5\u05DD \u05DE\u05E1\u05DA (\u05D0\u05D5\u05E4\u05E6\u05D9\u05D5\u05E0\u05DC\u05D9)';
+    placeholder.appendChild(phIcon);
+    placeholder.appendChild(phText);
+
+    var preview = document.createElement('div');
+    preview.className = 'tx-upload-preview';
+    preview.style.display = 'none';
+
+    var previewImg = document.createElement('img');
+    var removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'tx-upload-remove';
+    removeBtn.textContent = '\u2715';
+    preview.appendChild(previewImg);
+    preview.appendChild(removeBtn);
+
+    var fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = 'image/*,application/pdf';
+    fileInput.style.display = 'none';
+
+    wrapper.appendChild(placeholder);
+    wrapper.appendChild(preview);
+    wrapper.appendChild(fileInput);
+
+    if (_existingUrl) {
+      var isPdfExisting = /\.pdf(\?|$)/i.test(_existingUrl);
+      previewImg.src = isPdfExisting ? PDF_ICON_SVG : _existingUrl;
+      placeholder.style.display = 'none';
+      preview.style.display = '';
+    }
+
+    function processFile(file) {
+      if (file.type === 'application/pdf') {
+        _file = file;
+        previewImg.src = PDF_ICON_SVG;
+        placeholder.style.display = 'none';
+        preview.style.display = '';
+        _removed = false;
+        return;
+      }
+      compressImage(file, 1200, 0.7, function(compressedFile, dataUrl) {
+        _file = compressedFile;
+        previewImg.src = dataUrl;
+        placeholder.style.display = 'none';
+        preview.style.display = '';
+        _removed = false;
+      });
+    }
+
+    wrapper.addEventListener('click', function(e) {
+      if (e.target === removeBtn || e.target.closest('.tx-upload-remove')) return;
+      if (!_file && preview.style.display === 'none') fileInput.click();
+    });
+    fileInput.addEventListener('change', function() { if (fileInput.files[0]) processFile(fileInput.files[0]); });
+    wrapper.addEventListener('dragover', function(e) { e.preventDefault(); wrapper.classList.add('drag-over'); });
+    wrapper.addEventListener('dragleave', function(e) { e.preventDefault(); wrapper.classList.remove('drag-over'); });
+    wrapper.addEventListener('drop', function(e) { e.preventDefault(); wrapper.classList.remove('drag-over'); if (e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]); });
+
+    removeBtn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      _file = null; _removed = true;
+      fileInput.value = '';
+      previewImg.src = '';
+      placeholder.style.display = '';
+      preview.style.display = 'none';
+    });
+
+    return {
+      element: wrapper,
+      getFile: function() { return _file; },
+      wasRemoved: function() { return _removed; },
+      getExistingUrl: function() { return _existingUrl; }
+    };
+  }
+
+  // ---- Upload screenshot to Supabase storage ----
+  async function uploadScreenshot(file, leadId) {
+    var fileName = leadId + '/' + Date.now() + '_' + file.name.replace(/[^a-zA-Z0-9._-]/g, '');
+    var { data: uploadData, error: uploadErr } = await supabase.storage
+      .from('payment-screenshots')
+      .upload(fileName, file, { cacheControl: '3600', upsert: false });
+    if (uploadErr) { console.error('Screenshot upload failed:', uploadErr); return null; }
+    var { data: urlData } = supabase.storage.from('payment-screenshots').getPublicUrl(fileName);
+    return urlData.publicUrl;
+  }
+
+  // ---- Delete screenshot from storage via REST API ----
+  async function deleteScreenshotStorage(url) {
+    if (!url || url.startsWith('data:')) return;
+    try {
+      var match = url.match(/payment-screenshots\/(.+)$/);
+      if (!match) return;
+      await fetch(SUPABASE_URL + '/storage/v1/object/payment-screenshots/' + match[1], {
+        method: 'DELETE',
+        headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY }
+      });
+    } catch(e) { console.error('Failed to delete screenshot:', e); }
   }
 
   return {
@@ -243,6 +406,12 @@ var UI = (function() {
     conflictBanner: conflictBanner,
     dismissConflictBanner: dismissConflictBanner,
     icon: icon,
-    lightbox: openLightbox
+    lightbox: openLightbox,
+    screenshotThumb: screenshotThumb,
+    compressImage: compressImage,
+    createUploadArea: createUploadArea,
+    uploadScreenshot: uploadScreenshot,
+    deleteScreenshotStorage: deleteScreenshotStorage,
+    PDF_ICON_SVG: PDF_ICON_SVG
   };
 })();

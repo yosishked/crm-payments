@@ -372,6 +372,18 @@ var Editors = (function() {
     html += '</div>';
 
     container.innerHTML = html;
+
+    // Populate editor transaction screenshot thumbnails (DOM elements)
+    transactions.forEach(function(tx) {
+      var ssUrl = tx.transfer_screenshot || screenshotByEditorTxId[tx.id] || '';
+      if (ssUrl && ssUrl.startsWith('https://')) {
+        var cell = container.querySelector('td[data-ed-tx-ss="' + tx.id + '"]');
+        if (cell) {
+          var thumb = UI.screenshotThumb(ssUrl);
+          if (thumb) cell.appendChild(thumb);
+        }
+      }
+    });
   }
 
   // ============================================
@@ -409,8 +421,8 @@ var Editors = (function() {
           ? '<span class="pay-type-badge ' + payClass + '">' + UI.escapeHtml(tx.payment_type) + '</span>'
           : '-';
 
-        var edTxSS = screenshotByEditorTxId[tx.id] || '';
-        var edTxThumb = edTxSS ? '<img src="' + UI.escapeHtml(edTxSS) + '" alt="" loading="lazy" style="max-height:36px;border-radius:4px;cursor:pointer;border:1px solid #eee" onclick="event.stopPropagation(); UI.lightbox(this.src)">' : '';
+        // Screenshot: prefer direct tx screenshot, fallback to payment_submission screenshot
+        var edTxSS = tx.transfer_screenshot || screenshotByEditorTxId[tx.id] || '';
 
         html += '<tr>' +
           '<td>' + UI.formatDate(tx.effective_date) + '</td>' +
@@ -418,7 +430,7 @@ var Editors = (function() {
           '<td>' + UI.formatCurrency(tx.amount) + '</td>' +
           '<td>' + payHtml + '</td>' +
           '<td>' + UI.escapeHtml(tx.notes || '-') + '</td>' +
-          '<td>' + edTxThumb + '</td>' +
+          '<td data-ed-tx-ss="' + tx.id + '"></td>' +
           '<td>' + (isAdmin() ? '<button class="btn-icon" onclick="event.stopPropagation(); Editors.editTransaction(\'' + UI.escapeHtml(tx.id) + '\', \'' + eid + '\', \'' + lid + '\')" title="ערוך"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>' +
             '<button class="btn-icon btn-icon-danger" onclick="event.stopPropagation(); Editors.deleteTransaction(\'' + UI.escapeHtml(tx.id) + '\', \'' + eid + '\')" title="מחק"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>' : '') + '</td>' +
         '</tr>';
@@ -446,6 +458,7 @@ var Editors = (function() {
 
   // ---- Add Payment for specific lead ----
   function openAddPaymentForLead(editorId, leadId) {
+    var _uploadArea = null;
     FormHelpers.openEditModal({
       title: 'הוספת תשלום',
       screen: 'payments',
@@ -467,7 +480,16 @@ var Editors = (function() {
           { name: 'notes', label: 'הערות', type: 'textarea' }
         ]
       }],
+      afterRender: function(body) {
+        _uploadArea = UI.createUploadArea();
+        body.appendChild(_uploadArea.element);
+      },
       onSave: async function(formData) {
+        var screenshotUrl = null;
+        if (_uploadArea && _uploadArea.getFile()) {
+          screenshotUrl = await UI.uploadScreenshot(_uploadArea.getFile(), leadId);
+        }
+
         Realtime.markLocalSave();
         var editorTx = await API.createEditorTransaction({
           editor_id: editorId,
@@ -476,7 +498,8 @@ var Editors = (function() {
           amount: formData.amount,
           payment_type: formData.payment_type,
           effective_date: formData.effective_date || new Date().toISOString().split('T')[0],
-          notes: formData.notes
+          notes: formData.notes,
+          transfer_screenshot: screenshotUrl
         });
 
         // If "from client to editor" — also create linked client transaction
@@ -487,7 +510,8 @@ var Editors = (function() {
             payment_method: formData.payment_type,
             source: 'client_to_editor',
             notes: formData.notes || null,
-            linked_editor_transaction_id: editorTx.id
+            linked_editor_transaction_id: editorTx.id,
+            transfer_screenshot: screenshotUrl
           });
         }
 
@@ -700,6 +724,8 @@ var Editors = (function() {
     fields.push({ name: 'notes', label: 'הערות', type: 'textarea' });
 
     var title = isCost ? 'עריכת עלות עריכה' : isOffset ? 'עריכת קיזוז' : 'עריכת תשלום';
+    var showUpload = !isCost && !isOffset;
+    var _uploadArea = null;
 
     FormHelpers.openEditModal({
       title: title,
@@ -707,7 +733,25 @@ var Editors = (function() {
       width: '500px',
       data: prefillData,
       sections: [{ title: 'פרטים', fields: fields }],
+      afterRender: function(body) {
+        if (showUpload) {
+          _uploadArea = UI.createUploadArea(tx.transfer_screenshot || null);
+          body.appendChild(_uploadArea.element);
+        }
+      },
       onSave: async function(formData) {
+        // Handle screenshot changes
+        var screenshotUrl = tx.transfer_screenshot || null;
+        if (_uploadArea) {
+          if (_uploadArea.getFile()) {
+            if (screenshotUrl) await UI.deleteScreenshotStorage(screenshotUrl);
+            screenshotUrl = await UI.uploadScreenshot(_uploadArea.getFile(), leadId);
+          } else if (_uploadArea.wasRemoved()) {
+            if (screenshotUrl) await UI.deleteScreenshotStorage(screenshotUrl);
+            screenshotUrl = null;
+          }
+        }
+
         var updates = {
           amount: isOffset ? (tx.amount < 0 ? -Math.abs(formData.amount) : Math.abs(formData.amount)) : formData.amount,
           effective_date: formData.effective_date || tx.effective_date,
@@ -721,6 +765,9 @@ var Editors = (function() {
         if (isCost) {
           updates.payment_type = tx.payment_type;
         }
+        if (_uploadArea) {
+          updates.transfer_screenshot = screenshotUrl;
+        }
 
         await API.updateEditorTransaction(txId, updates);
 
@@ -733,11 +780,13 @@ var Editors = (function() {
             .maybeSingle();
 
           if (linkedClientTx) {
-            await API.updateClientTransaction(linkedClientTx.id, {
+            var clientUpdates = {
               amount: formData.amount,
               payment_method: formData.payment_type || null,
               notes: formData.notes || null
-            });
+            };
+            if (_uploadArea) clientUpdates.transfer_screenshot = screenshotUrl;
+            await API.updateClientTransaction(linkedClientTx.id, clientUpdates);
           }
         }
 
@@ -779,6 +828,9 @@ var Editors = (function() {
 
   // ---- Delete transaction ----
   async function deleteTransaction(txId, editorId) {
+    // Fetch the transaction to get screenshot URL
+    var { data: edTx } = await supabase.from('crm_editor_transactions').select('transfer_screenshot').eq('id', txId).maybeSingle();
+
     // Check if this is an offset to show appropriate message
     var { data: offsets } = await supabase
       .from('crm_editor_offsets')
@@ -788,7 +840,7 @@ var Editors = (function() {
     // Check if linked to a client transaction
     var { data: linkedClientTx } = await supabase
       .from('crm_client_transactions')
-      .select('id')
+      .select('id, transfer_screenshot')
       .eq('linked_editor_transaction_id', txId)
       .maybeSingle();
 
@@ -807,6 +859,8 @@ var Editors = (function() {
 
         // Delete linked client transaction + its payment submission + screenshot
         if (isLinked) {
+          // Delete client tx screenshot
+          if (linkedClientTx.transfer_screenshot) await UI.deleteScreenshotStorage(linkedClientTx.transfer_screenshot);
           var { data: linkedSub2 } = await supabase.from('crm_payment_submissions')
             .select('id, transfer_screenshot').eq('client_transaction_id', linkedClientTx.id).maybeSingle();
           if (linkedSub2) {
@@ -818,6 +872,9 @@ var Editors = (function() {
           }
           await API.deleteClientTransaction(linkedClientTx.id);
         }
+
+        // Delete editor transaction screenshot
+        if (edTx && edTx.transfer_screenshot) await UI.deleteScreenshotStorage(edTx.transfer_screenshot);
 
         await API.deleteEditorTransaction(txId);
         await _loadEditorDetail(editorId);

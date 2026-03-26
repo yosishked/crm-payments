@@ -3551,3 +3551,54 @@ input.form-input-error + .cs-dropdown .cs-dropdown-btn {
   font-size: 11px;
   padding: 2px 8px;
 }
+
+/* ---- Transaction Screenshot Upload Area ---- */
+.tx-upload-area {
+  border: 2px dashed #ddd;
+  border-radius: 8px;
+  padding: 12px;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  margin-top: 8px;
+}
+.tx-upload-area:hover {
+  border-color: #aaa;
+  background: #fafafa;
+}
+.tx-upload-area.drag-over {
+  border-color: var(--primary, #7B2D3B);
+  background: rgba(123, 45, 59, 0.05);
+}
+.tx-upload-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #999;
+  font-size: 13px;
+}
+.tx-upload-preview {
+  position: relative;
+  display: inline-block;
+}
+.tx-upload-preview img {
+  max-height: 60px;
+  border-radius: 6px;
+  border: 1px solid #eee;
+}
+.tx-upload-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #e53e3e;
+  color: #fff;
+  border: none;
+  font-size: 12px;
+  line-height: 20px;
+  text-align: center;
+  cursor: pointer;
+  padding: 0;
+}
