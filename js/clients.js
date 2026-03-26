@@ -691,7 +691,7 @@ var Clients = (function() {
           if (linkedSub) {
             if (linkedSub.transfer_screenshot && !linkedSub.transfer_screenshot.startsWith('data:')) {
               var ssMatch = linkedSub.transfer_screenshot.match(/payment-screenshots\/(.+)$/);
-              if (ssMatch) await supabase.storage.from('payment-screenshots').remove([ssMatch[1]]);
+              if (ssMatch) await fetch('https://fvmrxdxbmerahrjqdrte.supabase.co/storage/v1/object/payment-screenshots/' + ssMatch[1], { method: 'DELETE', headers: { 'apikey': 'sb_publishable_4x1YimxGWhmO8NzRmOB_3A_EhnYGTPB', 'Authorization': 'Bearer sb_publishable_4x1YimxGWhmO8NzRmOB_3A_EhnYGTPB' } });
             }
             await supabase.from('crm_payment_submissions').delete().eq('id', linkedSub.id);
           }

@@ -778,7 +778,7 @@ var Editors = (function() {
           if (linkedSub2) {
             if (linkedSub2.transfer_screenshot && !linkedSub2.transfer_screenshot.startsWith('data:')) {
               var ssMatch2 = linkedSub2.transfer_screenshot.match(/payment-screenshots\/(.+)$/);
-              if (ssMatch2) await supabase.storage.from('payment-screenshots').remove([ssMatch2[1]]);
+              if (ssMatch2) await fetch('https://fvmrxdxbmerahrjqdrte.supabase.co/storage/v1/object/payment-screenshots/' + ssMatch2[1], { method: 'DELETE', headers: { 'apikey': 'sb_publishable_4x1YimxGWhmO8NzRmOB_3A_EhnYGTPB', 'Authorization': 'Bearer sb_publishable_4x1YimxGWhmO8NzRmOB_3A_EhnYGTPB' } });
             }
             await supabase.from('crm_payment_submissions').delete().eq('id', linkedSub2.id);
           }
