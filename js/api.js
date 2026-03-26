@@ -300,7 +300,7 @@ var API = (function() {
     var { data, error } = await supabase
       .from('crm_leads')
       .select(_clientLeadFields)
-      .eq('stage', 'חוזה נחתם')
+      .not('stage', 'in', '("בקשה לחוזה","חוזה נשלח","נשלח פלאואפ","לא סגרו","בוטל")')
       .order('event_date', { ascending: false });
 
     if (error) {
