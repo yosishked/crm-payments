@@ -202,7 +202,10 @@ setInterval(function() {
 document.querySelectorAll('.nav-external, .mobile-nav-item[href^="https://"]').forEach(function(link) {
   link.addEventListener('click', function(e) {
     e.preventDefault();
-    navigateWithSso(link.getAttribute('href'));
+    var href = link.getAttribute('href');
+    buildSsoUrl(href).then(function(ssoUrl) {
+      window.location.href = ssoUrl;
+    });
   });
 });
 
