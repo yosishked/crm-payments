@@ -281,21 +281,37 @@ var Clients = (function() {
       return;
     }
 
-    var [eventLog, transactions, paySubmissions] = await Promise.all([
+    var [eventLog, transactions] = await Promise.all([
       API.fetchEventLog(leadId),
-      API.fetchClientTransactions(leadId),
-      supabase.from('crm_payment_submissions').select('client_transaction_id, transfer_screenshot').eq('lead_id', leadId).not('client_transaction_id', 'is', null).like('transfer_screenshot', 'https://%').then(function(r) { return r.data || []; })
+      API.fetchClientTransactions(leadId)
     ]);
     if (myVersion !== _detailVersion) return;
 
-    // Build screenshot map
-    var screenshotByTxId = {};
-    for (var psi = 0; psi < paySubmissions.length; psi++) {
-      if (paySubmissions[psi].transfer_screenshot) {
-        screenshotByTxId[paySubmissions[psi].client_transaction_id] = paySubmissions[psi].transfer_screenshot;
-      }
-    }
-    _renderClientDetail(container, lead, eventLog, transactions, screenshotByTxId);
+    _renderClientDetail(container, lead, eventLog, transactions, {});
+
+    // Load screenshots async (after render, so page loads fast)
+    supabase.from('crm_payment_submissions')
+      .select('client_transaction_id, transfer_screenshot')
+      .eq('lead_id', leadId)
+      .not('client_transaction_id', 'is', null)
+      .then(function(r) {
+        if (myVersion !== _detailVersion) return;
+        var subs = (r.data || []).filter(function(s) {
+          return s.transfer_screenshot && s.transfer_screenshot.startsWith('https://');
+        });
+        subs.forEach(function(s) {
+          var cell = document.querySelector('td[data-tx-ss="' + s.client_transaction_id + '"]');
+          if (cell) {
+            var img = document.createElement('img');
+            img.src = s.transfer_screenshot;
+            img.alt = '';
+            img.loading = 'lazy';
+            img.style.cssText = 'max-height:36px;border-radius:4px;cursor:pointer;border:1px solid #eee';
+            img.onclick = function() { UI.lightbox(img.src); };
+            cell.appendChild(img);
+          }
+        });
+      });
 
     // Update sidebar cross-module links
     _updateCrossLinks(leadId);
@@ -457,16 +473,13 @@ var Clients = (function() {
           ? UI.badge('לקוח לעורכת', 'warning')
           : UI.badge('CRM', 'info');
 
-        var txSS = screenshotByTxId[tx.id] || '';
-        var txThumb = txSS ? '<img src="' + UI.escapeHtml(txSS) + '" alt="" loading="lazy" style="max-height:36px;border-radius:4px;cursor:pointer;border:1px solid #eee" onclick="UI.lightbox(this.src)">' : '';
-
         html += '<tr>' +
           '<td>' + UI.formatDate(tx.created_at) + '</td>' +
           '<td>' + UI.formatCurrency(tx.amount) + '</td>' +
           '<td>' + payHtml + '</td>' +
           '<td>' + sourceHtml + '</td>' +
           '<td>' + UI.escapeHtml(tx.notes || '-') + '</td>' +
-          '<td>' + txThumb + '</td>' +
+          '<td data-tx-ss="' + tx.id + '"></td>' +
           '<td>' + (typeof isAdmin === 'function' && isAdmin() ?
             '<button class="btn-icon" onclick="Clients.editPayment(\'' + UI.escapeHtml(tx.id) + '\', \'' + lid + '\')" title="' + UI.escapeHtml('ערוך') + '"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>' +
             '<button class="btn-icon btn-icon-danger" onclick="Clients.deletePayment(\'' + UI.escapeHtml(tx.id) + '\', \'' + lid + '\')" title="' + UI.escapeHtml('מחק') + '"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>' : '') + '</td>' +
