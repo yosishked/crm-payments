@@ -771,11 +771,17 @@ var Editors = (function() {
       onConfirm: async function() {
         Realtime.markLocalSave();
 
-        // Delete linked client transaction + its payment submission
+        // Delete linked client transaction + its payment submission + screenshot
         if (isLinked) {
-          await supabase.from('crm_payment_submissions')
-            .delete()
-            .eq('client_transaction_id', linkedClientTx.id);
+          var { data: linkedSub2 } = await supabase.from('crm_payment_submissions')
+            .select('id, transfer_screenshot').eq('client_transaction_id', linkedClientTx.id).maybeSingle();
+          if (linkedSub2) {
+            if (linkedSub2.transfer_screenshot && !linkedSub2.transfer_screenshot.startsWith('data:')) {
+              var ssMatch2 = linkedSub2.transfer_screenshot.match(/payment-screenshots\/(.+)$/);
+              if (ssMatch2) await supabase.storage.from('payment-screenshots').remove([ssMatch2[1]]);
+            }
+            await supabase.from('crm_payment_submissions').delete().eq('id', linkedSub2.id);
+          }
           await API.deleteClientTransaction(linkedClientTx.id);
         }
 

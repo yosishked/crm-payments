@@ -685,10 +685,16 @@ var Clients = (function() {
             await API.deleteEditorTransaction(tx.linked_editor_transaction_id);
           }
 
-          // Delete linked payment submission if exists
-          await supabase.from('crm_payment_submissions')
-            .delete()
-            .eq('client_transaction_id', txId);
+          // Delete linked payment submission + screenshot if exists
+          var { data: linkedSub } = await supabase.from('crm_payment_submissions')
+            .select('id, transfer_screenshot').eq('client_transaction_id', txId).maybeSingle();
+          if (linkedSub) {
+            if (linkedSub.transfer_screenshot && !linkedSub.transfer_screenshot.startsWith('data:')) {
+              var ssMatch = linkedSub.transfer_screenshot.match(/payment-screenshots\/(.+)$/);
+              if (ssMatch) await supabase.storage.from('payment-screenshots').remove([ssMatch[1]]);
+            }
+            await supabase.from('crm_payment_submissions').delete().eq('id', linkedSub.id);
+          }
 
           await API.deleteClientTransaction(txId);
           // markLocalSave() schedules soft refresh — no full rebuild needed
