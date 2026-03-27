@@ -50,6 +50,12 @@ var Photographers = (function() {
     return 'paid_assistant';
   }
 
+  function _getCostField(role) {
+    if (role === 'main') return 'photographer_cost';
+    if (role === 'second') return 'second_photographer_cost';
+    return 'assistant_cost';
+  }
+
   function _getRoleLabel(role) {
     if (role === 'main') return 'צלם ראשי';
     if (role === 'second') return 'צלם שני';
@@ -347,7 +353,6 @@ var Photographers = (function() {
         '<th>' + UI.escapeHtml('שולם') + '</th>' +
         '<th>' + UI.escapeHtml('יתרה') + '</th>' +
         '<th>' + UI.escapeHtml('סטטוס') + '</th>' +
-        '<th></th>' +
       '</tr></thead><tbody>';
 
       // Sort by event_date ascending
@@ -375,21 +380,22 @@ var Photographers = (function() {
 
         var canEdit = typeof isAdmin === 'function' && isAdmin() && ev.log;
 
+        var costCell = canEdit
+          ? '<td class="inline-num-cell" onclick="Photographers.inlineEdit(this,\'cost\',\'' + UI.escapeHtml(lead.id) + '\',\'' + _getCostField(ev.role) + '\',null,\'' + UI.escapeHtml(photographer.id) + '\')" title="לחץ לעריכה" style="cursor:pointer">' + UI.formatCurrency(ev.cost) + '</td>'
+          : '<td>' + UI.formatCurrency(ev.cost) + '</td>';
+
+        var paidCell = canEdit
+          ? '<td class="inline-num-cell" onclick="Photographers.inlineEdit(this,\'paid\',\'' + UI.escapeHtml(ev.log.id) + '\',\'' + _getPaidField(ev.role) + '\',\'' + ev.paid + '\',\'' + UI.escapeHtml(photographer.id) + '\')" title="לחץ לעריכה" style="cursor:pointer">' + UI.formatCurrency(ev.paid) + '</td>'
+          : '<td>' + UI.formatCurrency(ev.paid) + '</td>';
+
         html += '<tr>' +
           '<td><strong>' + UI.escapeHtml(couple) + '</strong></td>' +
           '<td>' + UI.formatDate(lead.event_date) + '</td>' +
           '<td>' + roleBadge + '</td>' +
-          '<td>' + UI.formatCurrency(ev.cost) + '</td>' +
-          '<td>' + UI.formatCurrency(ev.paid) + '</td>' +
+          costCell +
+          paidCell +
           '<td class="' + (balance > 0 ? 'balance-owed' : balance < 0 ? 'balance-credit' : '') + '"><strong>' + UI.formatCurrency(balance) + '</strong></td>' +
           '<td>' + statusBadge + '</td>' +
-          '<td>' + (canEdit ?
-            '<button class="btn btn-secondary btn-xs" onclick="Photographers.editPaid(\'' +
-              UI.escapeHtml(ev.log.id) + '\', \'' +
-              UI.escapeHtml(photographer.id) + '\', \'' +
-              ev.role + '\', ' + ev.paid +
-            ')" title="' + UI.escapeHtml('עדכן תשלום') + '">&#9998;</button>' : '') +
-          '</td>' +
         '</tr>';
       }
 
@@ -413,30 +419,86 @@ var Photographers = (function() {
   }
 
   // ==================================
+  // INLINE EDIT
+  // ==================================
+
+  function inlineEdit(cell, type, recordId, field, currentVal, photographerId) {
+    if (cell.querySelector('input')) return;
+    var current = parseFloat(currentVal) || 0;
+    var displayText = cell.textContent;
+
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.inputMode = 'numeric';
+    input.value = current;
+    input.style.cssText = 'width:80px;text-align:right;font-size:inherit;border:1px solid #4f8ef7;border-radius:4px;padding:2px 4px';
+    cell.textContent = '';
+    cell.appendChild(input);
+
+    // stop click from bubbling back to cell onclick
+    input.addEventListener('click', function(e) { e.stopPropagation(); });
+
+    // delay focus to avoid immediate blur from the initiating click
+    setTimeout(function() { input.focus(); input.select(); }, 0);
+
+    var _saved = false;
+
+    function restore() { cell.textContent = displayText; }
+
+    function save() {
+      if (_saved) return;
+      _saved = true;
+      var val = parseFloat(input.value.replace(/[^0-9.\-]/g, ''));
+      if (isNaN(val)) { restore(); return; }
+      restore();
+      if (typeof Realtime !== 'undefined' && Realtime.markLocalSave) Realtime.markLocalSave();
+      var updates = {};
+      updates[field] = val;
+      var promise = type === 'cost'
+        ? API.updateLeadPhotographerCost(recordId, field, val)
+        : API.updateEventLogPayment(recordId, updates);
+      promise.then(function() {
+        API.invalidateCache('photographer_leads');
+        Promise.all([_loadPhotographerDetail(photographerId), window.initPhotographersList()]);
+      });
+    }
+
+    input.addEventListener('blur', save);
+    input.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+      if (e.key === 'Escape') { _saved = true; restore(); }
+    });
+  }
+
+  // ==================================
   // MODALS
   // ==================================
 
-  function editPaid(logId, photographerId, role, currentPaid) {
+  function editEvent(logId, leadId, photographerId, role, currentPaid, currentCost) {
     var roleLabel = _getRoleLabel(role);
     var paidField = _getPaidField(role);
+    var costField = _getCostField(role);
 
     FormHelpers.openEditModal({
-      title: 'עדכון תשלום ל' + roleLabel,
+      title: 'עדכון עלות ותשלום — ' + roleLabel,
       screen: 'payments',
       width: '400px',
-      data: { amount: currentPaid },
+      data: { cost: currentCost, paid: currentPaid },
       sections: [{
         title: 'פרטים',
         fields: [
-          { name: 'amount', label: 'סכום ששולם', type: 'number', required: true, noSpinner: true }
+          { name: 'cost', label: 'עלות', type: 'number', required: true, noSpinner: true },
+          { name: 'paid', label: 'שולם', type: 'number', required: true, noSpinner: true }
         ]
       }],
       onSave: async function(formData) {
-        var updates = {};
-        updates[paidField] = formData.amount;
         if (typeof Realtime !== 'undefined' && Realtime.markLocalSave) Realtime.markLocalSave();
-        await API.updateEventLogPayment(logId, updates);
-
+        var logUpdates = {};
+        logUpdates[paidField] = formData.paid;
+        await Promise.all([
+          API.updateEventLogPayment(logId, logUpdates),
+          API.updateLeadPhotographerCost(leadId, costField, formData.cost)
+        ]);
         API.invalidateCache('photographer_leads');
         await Promise.all([
           _loadPhotographerDetail(photographerId),
@@ -452,6 +514,7 @@ var Photographers = (function() {
 
   return {
     filterList: filterList,
-    editPaid: editPaid,
+    inlineEdit: inlineEdit,
+    editEvent: editEvent,
   };
 })();
