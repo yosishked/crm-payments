@@ -388,6 +388,47 @@ var UI = (function() {
     } catch(e) { console.error('Failed to delete screenshot:', e); }
   }
 
+  // ---- Note popup (opens on click) ----
+  function openNotePopup(text) {
+    var existing = document.getElementById('note-popup-overlay');
+    if (existing) existing.remove();
+
+    var closeBtn = document.createElement('button');
+    closeBtn.className = 'note-popup-close';
+    closeBtn.textContent = 'סגור';
+
+    var textDiv = document.createElement('div');
+    textDiv.className = 'note-popup-text';
+    textDiv.textContent = text;
+
+    var box = document.createElement('div');
+    box.className = 'note-popup-box';
+    box.appendChild(textDiv);
+    box.appendChild(closeBtn);
+
+    var overlay = document.createElement('div');
+    overlay.id = 'note-popup-overlay';
+    overlay.className = 'note-popup-overlay';
+    overlay.appendChild(box);
+
+    closeBtn.addEventListener('click', function() { overlay.remove(); });
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+  }
+
+  function escapeAttr(text) {
+    return String(text).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function noteCell(text, maxLen) {
+    maxLen = maxLen || 45;
+    if (!text) return '-';
+    if (text.length <= maxLen) return escapeHtml(text);
+    var shortEscaped = escapeHtml(text.substring(0, maxLen));
+    return '<span class="note-truncated" data-note="' + escapeAttr(text) + '" onclick="event.stopPropagation(); UI.openNotePopup(this.dataset.note)">' +
+      shortEscaped + '&#8230;</span>';
+  }
+
   return {
     escapeHtml: escapeHtml,
     badge: badge,
@@ -412,6 +453,8 @@ var UI = (function() {
     createUploadArea: createUploadArea,
     uploadScreenshot: uploadScreenshot,
     deleteScreenshotStorage: deleteScreenshotStorage,
+    openNotePopup: openNotePopup,
+    noteCell: noteCell,
     PDF_ICON_SVG: PDF_ICON_SVG
   };
 })();

@@ -9,7 +9,10 @@ var Editors = (function() {
   var _currentEditorId = null;
   var _expandedLeadId = null; // which lead row is expanded to show transactions
   var _detailVersion = 0;     // increments on each detail load — stale loads abort on render
+  var _savedDetailScroll = 0; // scroll position of detail panel (preserved on realtime refresh)
+  var _collapsedSections = {}; // { credit: bool, owed: bool, settled: bool }
   var _listVersion = 0;       // increments on each list load
+  var _scrollListenersAdded = false; // one-time scroll listeners setup flag
 
   // ============================================
   // EDITORS LIST (sidebar)
@@ -21,16 +24,27 @@ var Editors = (function() {
     var container = document.getElementById('editors-view');
     if (!container) return;
 
-    // Note: innerHTML used with escaped values only (UI.escapeHtml)
-    container.innerHTML = _renderListHeader() + UI.spinner();
+    // שמירת מיקום גלילה לפני איפוס
+    var _listPanel = container.closest('.split-panel-list');
+    if (_listPanel) sessionStorage.setItem('editors-list-scroll', _listPanel.scrollTop);
 
-    var editors = await API.fetchEditors();
+    // ספינר רק בטעינה ראשונה — רענון שקט אם כבר יש תוכן
+    if (!container.querySelector('.editor-card')) {
+      container.innerHTML = _renderListHeader() + UI.spinner(); // Note: innerHTML used with escaped values only (UI.escapeHtml)
+    }
+
+    // טוענים editors + כל לידי העורכות במקביל
+    var [editors, allEditorLeads] = await Promise.all([
+      API.fetchEditors(),
+      API.fetchAllEditorLeads()
+    ]);
     if (myVersion !== _listVersion) return; // stale — newer load started
 
     var allTransactions = await _fetchAllEditorTransactions(editors);
     if (myVersion !== _listVersion) return; // stale
 
     AppState.set('editors', editors);
+    AppState.set('allEditorLeads', allEditorLeads);
 
     _renderEditorsList(container, editors, allTransactions);
 
@@ -55,6 +69,14 @@ var Editors = (function() {
     await _loadEditorDetail(params.id);
   };
 
+  // רענון שקט אחרי שמירה מקומית (נקרא מ-Realtime.markLocalSave)
+  window._softRefreshEditorDetail = async function(editorId) {
+    await Promise.all([
+      _loadEditorDetail(editorId),
+      window.initEditorsList()
+    ]);
+  };
+
   function _highlightSelectedEditor(editorId) {
     document.querySelectorAll('.editor-card').forEach(function(el) {
       el.classList.toggle('editor-card-active', el.getAttribute('data-editor-id') === editorId);
@@ -62,29 +84,37 @@ var Editors = (function() {
   }
 
   async function _fetchAllEditorTransactions(editors) {
-    // Fetch all transactions for all editors in one query
+    // Fetch all editor transactions — avoid .in() due to Supabase UUID bug (silent empty result)
     var editorIds = editors.map(function(e) { return e.id; });
     if (editorIds.length === 0) return {};
 
-    var { data, error } = await supabase
-      .from('crm_editor_transactions')
-      .select('editor_id, transaction_type, amount')
-      .in('editor_id', editorIds);
-
-    if (error) {
-      console.error('Error fetching all transactions:', error);
-      return {};
+    // Paginate to get all rows (Supabase default max is 1000 per request)
+    var allData = [];
+    var from = 0;
+    while (true) {
+      var { data, error } = await supabase
+        .from('crm_editor_transactions')
+        .select('editor_id, transaction_type, amount')
+        .range(from, from + 999);
+      if (error) { console.error('Error fetching editor transactions:', error); break; }
+      if (!data || data.length === 0) break;
+      allData = allData.concat(data);
+      if (data.length < 1000) break;
+      from += 1000;
     }
 
-    // Group by editor_id and calculate balance
+    // Group by editor_id and calculate balance (filter to known editors in code)
+    var editorIdSet = {};
+    editorIds.forEach(function(id) { editorIdSet[id] = true; });
     var balances = {};
-    (data || []).forEach(function(tx) {
+    allData.forEach(function(tx) {
+      if (!editorIdSet[tx.editor_id]) return; // skip unrelated
       if (!balances[tx.editor_id]) {
         balances[tx.editor_id] = { cost: 0, paid: 0 };
       }
       if (tx.transaction_type === 'עלות עריכה') {
         balances[tx.editor_id].cost += (tx.amount || 0);
-      } else {
+      } else if (tx.transaction_type !== 'שכר עבודה') {
         balances[tx.editor_id].paid += (tx.amount || 0);
       }
     });
@@ -117,7 +147,36 @@ var Editors = (function() {
     }
 
     html += '</div>';
-    container.innerHTML = html;
+    container.innerHTML = html; // Note: innerHTML used with escaped values only (UI.escapeHtml)
+
+    // שחזור מיקום גלילה
+    var _listPanel = container.closest('.split-panel-list');
+    if (_listPanel) {
+      var _saved = parseInt(sessionStorage.getItem('editors-list-scroll') || '0', 10);
+      if (_saved > 0) _listPanel.scrollTop = _saved;
+
+      // הוספת listener פעם אחת — שומר scroll בזמן גלילה
+      if (!_scrollListenersAdded) {
+        _scrollListenersAdded = true;
+        var _listScrollTimer = null;
+        _listPanel.addEventListener('scroll', function() {
+          clearTimeout(_listScrollTimer);
+          _listScrollTimer = setTimeout(function() {
+            sessionStorage.setItem('editors-list-scroll', _listPanel.scrollTop);
+          }, 150);
+        });
+        var _detailPanel = document.querySelector('#editors-split .split-panel-detail');
+        if (_detailPanel) {
+          var _detailScrollTimer = null;
+          _detailPanel.addEventListener('scroll', function() {
+            clearTimeout(_detailScrollTimer);
+            _detailScrollTimer = setTimeout(function() {
+              sessionStorage.setItem('editors-detail-scroll', _detailPanel.scrollTop);
+            }, 150);
+          });
+        }
+      }
+    }
   }
 
   function _renderEditorCard(editor, balance) {
@@ -161,8 +220,21 @@ var Editors = (function() {
     var container = document.getElementById('editor-detail-view');
     if (!container) return;
 
-    // Note: spinner is safe static HTML
-    container.innerHTML = UI.spinner();
+    // שמירת scroll — מהמשתנה (Realtime) או מ-sessionStorage (רענון דף)
+    var _detailPanel = container.closest('.split-panel-detail');
+    if (_detailPanel && editorId === _currentEditorId) {
+      // אותה עורכת — שמור scroll נוכחי (מנצח sessionStorage)
+      _savedDetailScroll = _detailPanel.scrollTop > 0 ? _detailPanel.scrollTop
+        : parseInt(sessionStorage.getItem('editors-detail-scroll') || '0', 10);
+    } else {
+      // עורכת חדשה — נסה מ-sessionStorage רק אם אותו ID ב-URL
+      _savedDetailScroll = 0;
+    }
+
+    // ספינר רק אם הפאנל ריק (טעינה ראשונה) — ריענון שקט אם כבר יש תוכן
+    if (!container.querySelector('.detail-card')) {
+      container.innerHTML = UI.spinner(); // Note: spinner is safe static HTML
+    }
 
     var editors = AppState.get('editors') || await API.fetchEditors();
     if (myVersion !== _detailVersion) return; // stale — user navigated away
@@ -173,28 +245,40 @@ var Editors = (function() {
       return;
     }
 
-    var [leads, transactions] = await Promise.all([
-      API.fetchEditorLeads(editorId),
-      API.fetchEditorTransactions(editorId)
-    ]);
+    // לידים מ-AppState (נטענו כבר ברשימה) — אפס קריאות רשת
+    var allEditorLeads = AppState.get('allEditorLeads') || [];
+    var leads = allEditorLeads.filter(function(l) { return l.editor_id === editorId; });
+
+    // תנועות — עדיין לפי עורכת (קריאה אחת)
+    var transactions = await API.fetchEditorTransactions(editorId);
     if (myVersion !== _detailVersion) return; // stale
 
-    // Also fetch leads that have transactions but aren't in editor_leads
-    var leadIds = leads.map(function(l) { return l.id; });
+    // לידים חסרים (תנועות על ליד ש-editor_id שלו השתנה) — fallback נקודתי
+    var leadIdSet = {};
+    leads.forEach(function(l) { leadIdSet[l.id] = true; });
     var missingIds = [];
     transactions.forEach(function(tx) {
-      if (tx.lead_id && leadIds.indexOf(tx.lead_id) === -1 && missingIds.indexOf(tx.lead_id) === -1) {
+      if (tx.lead_id && !leadIdSet[tx.lead_id] && missingIds.indexOf(tx.lead_id) === -1) {
         missingIds.push(tx.lead_id);
       }
     });
     if (missingIds.length > 0) {
-      var { data: extraLeads } = await supabase
-        .from('crm_leads')
-        .select('id, groom_first_name, bride_first_name, event_date, editor_id, editing_cost, stage')
-        .in('id', missingIds);
-      if (myVersion !== _detailVersion) return; // stale
-      if (extraLeads && extraLeads.length) {
-        leads = leads.concat(extraLeads);
+      // בדוק קודם ב-AppState (אולי הליד שם עם editor_id אחר)
+      var allLeadsMap = {};
+      allEditorLeads.forEach(function(l) { allLeadsMap[l.id] = l; });
+      var stillMissing = [];
+      missingIds.forEach(function(id) {
+        if (allLeadsMap[id]) { leads = leads.concat(allLeadsMap[id]); }
+        else { stillMissing.push(id); }
+      });
+      // רק אם באמת חסר — קריאת רשת
+      if (stillMissing.length > 0) {
+        var { data: extraLeads } = await supabase
+          .from('crm_leads')
+          .select('id, groom_first_name, bride_first_name, event_date, editor_id, editing_cost, stage')
+          .in('id', stillMissing);
+        if (myVersion !== _detailVersion) return; // stale
+        if (extraLeads && extraLeads.length) leads = leads.concat(extraLeads);
       }
     }
 
@@ -226,7 +310,13 @@ var Editors = (function() {
       }
     }
 
-    _expandedLeadId = _expandedLeadId; // preserve expanded state
+    // שחזור אירוע פתוח מ-sessionStorage (רענון דף)
+    if (!_expandedLeadId) {
+      try {
+        var _saved = JSON.parse(sessionStorage.getItem('editors-expanded-lead') || 'null');
+        if (_saved && _saved.editorId === editorId) _expandedLeadId = _saved.leadId;
+      } catch(e) {}
+    }
     _renderEditorDetail(container, editor, leads, transactions, editorScreenshotMap);
   }
 
@@ -249,7 +339,7 @@ var Editors = (function() {
       txs.forEach(function(tx) {
         if (tx.transaction_type === 'עלות עריכה') cost += (tx.amount || 0);
         else if (tx.transaction_type === 'העברת תשלום מהלקוח לעורכת') paidClient += (tx.amount || 0);
-        else if (tx.transaction_type === 'העברת תשלום מהמשרד לעורכת') paidOffice += (tx.amount || 0);
+        else if (tx.transaction_type === 'העברת תשלום מהמשרד לעורכת' || tx.transaction_type === 'העברת תשלום' || tx.transaction_type === 'אחר') paidOffice += (tx.amount || 0);
         else if (tx.transaction_type === 'קיזוז') offsets += (tx.amount || 0);
       });
       var balance = cost - paidClient - paidOffice - offsets;
@@ -289,89 +379,111 @@ var Editors = (function() {
 
     var eid = UI.escapeHtml(editor.id);
 
-    // ---- Events table ----
-    html += '<div class="detail-card">';
-    html += '<div class="detail-section-title">' + UI.escapeHtml('אירועים') + ' (' + leads.length + ')</div>';
+    // ---- Events — 3 collapsible sections ----
+    // Sort by date descending
+    var sortedRows = leadRows.slice().sort(function(a, b) {
+      var da = a.lead.event_date || '';
+      var db = b.lead.event_date || '';
+      return db.localeCompare(da);
+    });
 
-    if (leadRows.length === 0) {
-      html += UI.emptyState('אין אירועים משויכים לעורכת זו');
-    } else {
-      html += '<div class="responsive-table-wrap"><table class="data-table">';
-      html += '<thead><tr>' +
-        '<th>' + UI.escapeHtml('זוג') + '</th>' +
-        '<th>' + UI.escapeHtml('תאריך') + '</th>' +
-        '<th>' + UI.escapeHtml('עלות עריכה') + '</th>' +
-        '<th>' + UI.escapeHtml('שולם מלקוח') + '</th>' +
-        '<th>' + UI.escapeHtml('שולם ממשרד') + '</th>' +
-        '<th>' + UI.escapeHtml('קיזוזים') + '</th>' +
-        '<th>' + UI.escapeHtml('יתרה') + '</th>' +
-        '<th>' + UI.escapeHtml('סטטוס') + '</th>' +
-        '<th>' + UI.escapeHtml('פעולות') + '</th>' +
-      '</tr></thead><tbody>';
+    var groups = {
+      credit:  { label: 'זיכוי',  rows: [], colorClass: 'section-credit' },
+      owed:    { label: 'חוב',    rows: [], colorClass: 'section-owed' },
+      settled: { label: 'שולם',   rows: [], colorClass: 'section-settled' }
+    };
+    sortedRows.forEach(function(row) {
+      if (row.balance < 0)      groups.credit.rows.push(row);
+      else if (row.balance > 0) groups.owed.rows.push(row);
+      else                      groups.settled.rows.push(row);
+    });
 
-      var runningBalance = 0;
-      // Sort by event_date ascending for running balance
-      var sorted = leadRows.slice().sort(function(a, b) {
-        var da = a.lead.event_date || '';
-        var db = b.lead.event_date || '';
-        return da.localeCompare(db);
-      });
+    var groupOrder = ['credit', 'owed', 'settled'];
+    groupOrder.forEach(function(key) {
+      var group = groups[key];
+      if (group.rows.length === 0) return;
 
-      for (var i = 0; i < sorted.length; i++) {
-        var row = sorted[i];
-        var lead = row.lead;
-        var couple = (lead.groom_first_name || '') + ' & ' + (lead.bride_first_name || '');
-        runningBalance += row.balance;
+      var isCollapsed = _collapsedSections[key] === true;
+      var totalBal = group.rows.reduce(function(s, r) { return s + r.balance; }, 0);
+      var arrow = isCollapsed ? '◀' : '▼';
 
-        var statusBadge = row.balance === 0
-          ? UI.badge('מסולק', 'success')
-          : row.balance > 0 && (row.paidClient + row.paidOffice + row.offsets) > 0
-            ? UI.badge('חלקי', 'warning')
-            : row.balance > 0
-              ? UI.badge('לא שולם', 'danger')
-              : UI.badge('זיכוי', 'info');
+      html += '<div class="detail-card events-section-card">';
+      html += '<div class="events-section-header ' + group.colorClass + '" onclick="Editors.toggleSection(\'' + key + '\')">' +
+        '<span class="events-section-label">' + UI.escapeHtml(group.label) + ' <span class="events-section-count">(' + group.rows.length + ')</span></span>' +
+        '<span class="events-section-total">' + UI.escapeHtml(key !== 'settled' ? UI.formatCurrency(Math.abs(totalBal)) : '') + '</span>' +
+        '<span class="events-section-arrow">' + arrow + '</span>' +
+      '</div>';
 
-        var isExpanded = _expandedLeadId === lead.id;
-        var expandClass = isExpanded ? ' row-expanded' : '';
+      if (!isCollapsed) {
+        html += '<div class="responsive-table-wrap"><table class="data-table">';
+        html += '<thead><tr>' +
+          '<th>' + UI.escapeHtml('זוג') + '</th>' +
+          '<th>' + UI.escapeHtml('תאריך') + '</th>' +
+          '<th>' + UI.escapeHtml('עלות עריכה') + '</th>' +
+          '<th>' + UI.escapeHtml('שולם מלקוח') + '</th>' +
+          '<th>' + UI.escapeHtml('שולם ממשרד') + '</th>' +
+          '<th>' + UI.escapeHtml('קיזוזים') + '</th>' +
+          '<th>' + UI.escapeHtml('יתרה') + '</th>' +
+          '<th>' + UI.escapeHtml('סטטוס') + '</th>' +
+          '<th>' + UI.escapeHtml('פעולות') + '</th>' +
+        '</tr></thead><tbody>';
 
-        var leadIdEsc = UI.escapeHtml(lead.id);
-        html += '<tr class="clickable-row' + expandClass + '" onclick="Editors.toggleLeadTransactions(\'' + eid + '\', \'' + leadIdEsc + '\')">' +
-          '<td><strong>' + UI.escapeHtml(couple) + '</strong></td>' +
-          '<td>' + UI.formatDate(lead.event_date) + '</td>' +
-          '<td>' + UI.formatCurrency(row.cost) + '</td>' +
-          '<td>' + UI.formatCurrency(row.paidClient) + '</td>' +
-          '<td>' + UI.formatCurrency(row.paidOffice) + '</td>' +
-          '<td>' + UI.formatCurrency(row.offsets) + '</td>' +
-          '<td class="' + (row.balance > 0 ? 'balance-owed' : row.balance < 0 ? 'balance-credit' : '') + '"><strong>' + UI.formatCurrency(row.balance) + '</strong></td>' +
-          '<td>' + statusBadge + '</td>' +
-          '<td class="row-actions">' +
-            '<button class="btn btn-primary btn-xs" onclick="event.stopPropagation(); Editors.openAddPaymentForLead(\'' + eid + '\', \'' + leadIdEsc + '\')" title="תשלום">+ תשלום</button> ' +
-            '<button class="btn btn-secondary btn-xs" onclick="event.stopPropagation(); Editors.openOffsetForLead(\'' + eid + '\', \'' + leadIdEsc + '\')" title="קיזוז">+ קיזוז</button>' +
-          '</td>' +
-        '</tr>';
+        group.rows.forEach(function(row) {
+          var lead = row.lead;
+          var couple = (lead.groom_first_name || '') + ' & ' + (lead.bride_first_name || '');
+          var statusBadge = row.balance === 0
+            ? UI.badge('מסולק', 'success')
+            : row.balance > 0 && (row.paidClient + row.paidOffice + row.offsets) > 0
+              ? UI.badge('חלקי', 'warning')
+              : row.balance > 0
+                ? UI.badge('לא שולם', 'danger')
+                : UI.badge('זיכוי', 'info');
 
-        // Expanded transactions row
-        if (isExpanded) {
-          html += '<tr class="transactions-detail-row"><td colspan="9">';
-          html += _renderLeadTransactions(editor.id, lead, row.transactions, screenshotByEditorTxId);
-          html += '</td></tr>';
-        }
+          var isExpanded = _expandedLeadId === lead.id;
+          var expandClass = isExpanded ? ' row-expanded' : '';
+          var leadIdEsc = UI.escapeHtml(lead.id);
+
+          html += '<tr class="clickable-row' + expandClass + '" onclick="Editors.toggleLeadTransactions(\'' + eid + '\', \'' + leadIdEsc + '\')">' +
+            '<td><strong>' + UI.escapeHtml(couple) + '</strong></td>' +
+            '<td>' + UI.formatDate(lead.event_date) + '</td>' +
+            '<td>' + UI.formatCurrency(row.cost) + '</td>' +
+            '<td>' + UI.formatCurrency(row.paidClient) + '</td>' +
+            '<td>' + UI.formatCurrency(row.paidOffice) + '</td>' +
+            '<td>' + UI.formatCurrency(row.offsets) + '</td>' +
+            '<td class="' + (row.balance > 0 ? 'balance-owed' : row.balance < 0 ? 'balance-credit' : '') + '"><strong>' + UI.formatCurrency(row.balance) + '</strong></td>' +
+            '<td>' + statusBadge + '</td>' +
+            '<td class="row-actions">' +
+              '<button class="btn btn-primary btn-xs" onclick="event.stopPropagation(); Editors.openAddPaymentForLead(\'' + eid + '\', \'' + leadIdEsc + '\')" title="תשלום">+ תשלום</button> ' +
+              '<button class="btn btn-secondary btn-xs" onclick="event.stopPropagation(); Editors.openOffsetForLead(\'' + eid + '\', \'' + leadIdEsc + '\')" title="קיזוז">+ קיזוז</button>' +
+            '</td>' +
+          '</tr>';
+
+          if (isExpanded) {
+            html += '<tr class="transactions-detail-row"><td colspan="9">';
+            html += _renderLeadTransactions(editor.id, lead, row.transactions, screenshotByEditorTxId);
+            html += '</td></tr>';
+          }
+        });
+
+        html += '</tbody></table></div>';
       }
 
-      html += '</tbody></table></div>';
-
-      // Running balance summary
-      html += '<div class="running-balance-summary">';
-      html += '<strong>' + UI.escapeHtml('יתרה מצטברת: ') + '</strong>';
-      html += '<span class="' + (runningBalance > 0 ? 'balance-owed' : runningBalance < 0 ? 'balance-credit' : 'balance-zero') + '">';
-      html += UI.formatCurrency(runningBalance);
-      html += '</span>';
       html += '</div>';
+    });
+
+    if (leadRows.length === 0) {
+      html += '<div class="detail-card">' + UI.emptyState('אין אירועים משויכים לעורכת זו') + '</div>';
     }
 
-    html += '</div>';
+    container.innerHTML = html; // Note: innerHTML used with escaped values only (UI.escapeHtml)
 
-    container.innerHTML = html;
+    // שחזור scroll
+    var _scrollToRestore = _savedDetailScroll > 0 ? _savedDetailScroll
+      : parseInt(sessionStorage.getItem('editors-detail-scroll') || '0', 10);
+    if (_scrollToRestore > 0) {
+      var _detailPanelRestore = container.closest('.split-panel-detail');
+      if (_detailPanelRestore) _detailPanelRestore.scrollTop = _scrollToRestore;
+    }
 
     // Populate editor transaction screenshot thumbnails (DOM elements)
     transactions.forEach(function(tx) {
@@ -429,7 +541,7 @@ var Editors = (function() {
           '<td><span class="pay-type-badge ' + typeClass + '">' + UI.escapeHtml(tx.transaction_type || '-') + '</span></td>' +
           '<td>' + UI.formatCurrency(tx.amount) + '</td>' +
           '<td>' + payHtml + '</td>' +
-          '<td>' + UI.escapeHtml(tx.notes || '-') + '</td>' +
+          '<td>' + UI.noteCell(tx.notes) + '</td>' +
           '<td data-ed-tx-ss="' + tx.id + '"></td>' +
           '<td>' + (isAdmin() ? '<button class="btn-icon" onclick="event.stopPropagation(); Editors.editTransaction(\'' + UI.escapeHtml(tx.id) + '\', \'' + eid + '\', \'' + lid + '\')" title="ערוך"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>' +
             '<button class="btn-icon btn-icon-danger" onclick="event.stopPropagation(); Editors.deleteTransaction(\'' + UI.escapeHtml(tx.id) + '\', \'' + eid + '\')" title="מחק"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>' : '') + '</td>' +
@@ -446,8 +558,10 @@ var Editors = (function() {
   async function toggleLeadTransactions(editorId, leadId) {
     if (_expandedLeadId === leadId) {
       _expandedLeadId = null;
+      sessionStorage.removeItem('editors-expanded-lead');
     } else {
       _expandedLeadId = leadId;
+      sessionStorage.setItem('editors-expanded-lead', JSON.stringify({ editorId: editorId, leadId: leadId }));
     }
     await _loadEditorDetail(editorId);
   }
@@ -524,7 +638,10 @@ var Editors = (function() {
 
   // ---- Offset for specific lead ----
   function openOffsetForLead(editorId, leadId) {
-    API.fetchEditorLeads(editorId).then(async function(leads) {
+    (async function() {
+      var allEditorLeads = AppState.get('allEditorLeads') || [];
+      var leads = allEditorLeads.filter(function(l) { return l.editor_id === editorId; });
+      if (leads.length === 0) leads = await API.fetchEditorLeads(editorId); // fallback
       var transactions = await API.fetchEditorTransactions(editorId);
 
       // Calculate balance per lead
@@ -664,7 +781,7 @@ var Editors = (function() {
           });
         }
       }, 100);
-    });
+    })();
   }
 
   // ---- Edit transaction ----
@@ -887,6 +1004,11 @@ var Editors = (function() {
   // PUBLIC API
   // ============================================
 
+  function toggleSection(key) {
+    _collapsedSections[key] = !_collapsedSections[key];
+    if (_currentEditorId) _loadEditorDetail(_currentEditorId);
+  }
+
   return {
     filterList: filterList,
     toggleLeadTransactions: toggleLeadTransactions,
@@ -894,5 +1016,6 @@ var Editors = (function() {
     openOffsetForLead: openOffsetForLead,
     editTransaction: editTransaction,
     deleteTransaction: deleteTransaction,
+    toggleSection: toggleSection,
   };
 })();

@@ -10,6 +10,8 @@ var Clients = (function() {
   var _listVersion = 0;
   var _detailVersion = 0;
   var _currentFilter = 'all'; // all | unpaid | paid
+  var _savedClientDetailScroll = 0;
+  var _clientScrollListenersAdded = false;
 
   // ---- Cross-module links (sidebar + mobile) ----
   async function _updateCrossLinks(leadId) {
@@ -84,8 +86,8 @@ var Clients = (function() {
     var container = document.getElementById('clients-view');
     if (!container) return;
 
-    // Note: innerHTML used with escaped values only (UI.escapeHtml)
-    container.innerHTML = _renderListHeader() + UI.spinner();
+    // ספינר רק בטעינה ראשונה — ריענון שקט אם כבר יש תוכן (escaped values only)
+    if (!container.querySelector('.client-card')) container.innerHTML = _renderListHeader() + UI.spinner();
 
     var leads = await API.fetchClientLeads();
     if (myVersion !== _listVersion) return;
@@ -182,7 +184,30 @@ var Clients = (function() {
     }
 
     html += '</div>';
-    container.innerHTML = html;
+    container.innerHTML = html; // Note: escaped values only
+
+    var _listPanel = container.closest('.split-panel-list');
+    if (_listPanel) {
+      var _savedList = parseInt(sessionStorage.getItem('clients-list-scroll') || '0', 10);
+      if (_savedList > 0) _listPanel.scrollTop = _savedList;
+
+      if (!_clientScrollListenersAdded) {
+        _clientScrollListenersAdded = true;
+        var _lt = null;
+        _listPanel.addEventListener('scroll', function() {
+          clearTimeout(_lt);
+          _lt = setTimeout(function() { sessionStorage.setItem('clients-list-scroll', _listPanel.scrollTop); }, 150);
+        });
+        var _dp = document.querySelector('#clients-split .split-panel-detail');
+        if (_dp) {
+          var _dt = null;
+          _dp.addEventListener('scroll', function() {
+            clearTimeout(_dt);
+            _dt = setTimeout(function() { sessionStorage.setItem('clients-detail-scroll', _dp.scrollTop); }, 150);
+          });
+        }
+      }
+    }
   }
 
   function _renderClientCard(lead, totalWithVat, paid, balance, teamMap) {
@@ -269,8 +294,11 @@ var Clients = (function() {
     var container = document.getElementById('client-detail-view');
     if (!container) return;
 
+    var _dp = container.closest('.split-panel-detail');
+    _savedClientDetailScroll = (_dp && leadId === _currentLeadId) ? (_dp.scrollTop > 0 ? _dp.scrollTop : parseInt(sessionStorage.getItem('clients-detail-scroll') || '0', 10)) : 0;
+
     // Show spinner only on first load, not on silent refresh
-    if (!silent) container.innerHTML = UI.spinner();
+    if (!silent && !container.querySelector('.detail-card')) container.innerHTML = UI.spinner();
 
     var leads = AppState.get('clientLeads') || await API.fetchClientLeads();
     if (myVersion !== _detailVersion) return;
@@ -288,6 +316,14 @@ var Clients = (function() {
     if (myVersion !== _detailVersion) return;
 
     _renderClientDetail(container, lead, eventLog, transactions, {});
+
+    // שחזור scroll
+    var _scrollToRestore = _savedClientDetailScroll > 0 ? _savedClientDetailScroll
+      : parseInt(sessionStorage.getItem('clients-detail-scroll') || '0', 10);
+    if (_scrollToRestore > 0) {
+      var _dpRestore = container.closest('.split-panel-detail');
+      if (_dpRestore) _dpRestore.scrollTop = _scrollToRestore;
+    }
 
     // Load screenshots async (after render, so page loads fast)
     // 1. Direct screenshots on transactions
@@ -484,7 +520,7 @@ var Clients = (function() {
           '<td>' + UI.formatCurrency(tx.amount) + '</td>' +
           '<td>' + payHtml + '</td>' +
           '<td>' + sourceHtml + '</td>' +
-          '<td>' + UI.escapeHtml(tx.notes || '-') + '</td>' +
+          '<td>' + UI.noteCell(tx.notes) + '</td>' +
           '<td data-tx-ss="' + tx.id + '"></td>' +
           '<td>' + (typeof isAdmin === 'function' && isAdmin() ?
             '<button class="btn-icon" onclick="Clients.editPayment(\'' + UI.escapeHtml(tx.id) + '\', \'' + lid + '\')" title="' + UI.escapeHtml('ערוך') + '"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>' +

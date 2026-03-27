@@ -67,7 +67,30 @@ var API = (function() {
     return data || [];
   }
 
+  async function fetchAllEditorLeads() {
+    var cached = _getCached('all_editor_leads');
+    if (cached) return cached;
+
+    var { data, error } = await supabase
+      .from('crm_leads')
+      .select('id, groom_first_name, bride_first_name, event_date, editor_id, editing_cost, stage')
+      .not('editor_id', 'is', null)
+      .order('event_date', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching all editor leads:', error);
+      return [];
+    }
+
+    _setCache('all_editor_leads', data || []);
+    return data || [];
+  }
+
   async function fetchEditorLeads(editorId) {
+    var cacheKey = 'editor_leads_' + editorId;
+    var cached = _getCached(cacheKey);
+    if (cached) return cached;
+
     var { data, error } = await supabase
       .from('crm_leads')
       .select('id, groom_first_name, bride_first_name, event_date, editor_id, editing_cost, stage')
@@ -79,6 +102,7 @@ var API = (function() {
       return [];
     }
 
+    _setCache(cacheKey, data || []);
     return data || [];
   }
 
@@ -530,6 +554,7 @@ var API = (function() {
 
   return {
     // Editors
+    fetchAllEditorLeads: fetchAllEditorLeads,
     fetchEditors: fetchEditors,
     fetchLeadsForPayments: fetchLeadsForPayments,
     fetchEditorLeads: fetchEditorLeads,

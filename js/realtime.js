@@ -73,6 +73,11 @@ var Realtime = (function() {
         if (typeof window._softRefreshEditorDetail === 'function') {
           window._softRefreshEditorDetail(editorId);
         }
+      } else if (hash.startsWith('photographers/')) {
+        var photographerId = hash.split('/')[1];
+        if (typeof window._softRefreshPhotographerDetail === 'function') {
+          window._softRefreshPhotographerDetail(photographerId);
+        }
       } else {
         _doRefresh();
       }

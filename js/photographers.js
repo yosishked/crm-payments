@@ -9,6 +9,8 @@ var Photographers = (function() {
   var _currentPhotographerId = null;
   var _listVersion = 0;
   var _detailVersion = 0;
+  var _savedPhotographerDetailScroll = 0;
+  var _photoScrollListenersAdded = false;
 
   // ==================================
   // COST CALCULATIONS
@@ -101,8 +103,10 @@ var Photographers = (function() {
     var container = document.getElementById('photographers-view');
     if (!container) return;
 
-    // Note: innerHTML used with escaped values only (UI.escapeHtml)
-    container.innerHTML = _renderListHeader() + UI.spinner();
+    // ספינר רק בטעינה ראשונה
+    if (!container.querySelector('.photographer-card')) {
+      container.innerHTML = _renderListHeader() + UI.spinner(); // Note: escaped values only
+    }
 
     var [photographers, leads] = await Promise.all([
       API.fetchPhotographers(),
@@ -139,6 +143,14 @@ var Photographers = (function() {
 
     _highlightSelected(params.id);
     await _loadPhotographerDetail(params.id);
+  };
+
+  window._softRefreshPhotographerDetail = async function(photographerId) {
+    API.invalidateCache('photographer_leads');
+    await Promise.all([
+      _loadPhotographerDetail(photographerId),
+      window.initPhotographersList()
+    ]);
   };
 
   function _highlightSelected(photographerId) {
@@ -183,7 +195,30 @@ var Photographers = (function() {
     }
 
     html += '</div>';
-    container.innerHTML = html;
+    container.innerHTML = html; // Note: escaped values only
+
+    var _lp = container.closest('.split-panel-list');
+    if (_lp) {
+      var _sl = parseInt(sessionStorage.getItem('photographers-list-scroll') || '0', 10);
+      if (_sl > 0) _lp.scrollTop = _sl;
+
+      if (!_photoScrollListenersAdded) {
+        _photoScrollListenersAdded = true;
+        var _lt = null;
+        _lp.addEventListener('scroll', function() {
+          clearTimeout(_lt);
+          _lt = setTimeout(function() { sessionStorage.setItem('photographers-list-scroll', _lp.scrollTop); }, 150);
+        });
+        var _dp = document.querySelector('#photographers-split .split-panel-detail');
+        if (_dp) {
+          var _dt = null;
+          _dp.addEventListener('scroll', function() {
+            clearTimeout(_dt);
+            _dt = setTimeout(function() { sessionStorage.setItem('photographers-detail-scroll', _dp.scrollTop); }, 150);
+          });
+        }
+      }
+    }
   }
 
   function _renderPhotographerCard(photographer, eventCount, totalCost, totalPaid, balance) {
@@ -230,8 +265,12 @@ var Photographers = (function() {
     var container = document.getElementById('photographer-detail-view');
     if (!container) return;
 
-    // Note: spinner is safe static HTML
-    container.innerHTML = UI.spinner();
+    var _dp = container.closest('.split-panel-detail');
+    _savedPhotographerDetailScroll = (_dp && photographerId === _currentPhotographerId)
+      ? (_dp.scrollTop > 0 ? _dp.scrollTop : parseInt(sessionStorage.getItem('photographers-detail-scroll') || '0', 10))
+      : 0;
+
+    if (!container.querySelector('.detail-card')) container.innerHTML = UI.spinner(); // Note: safe static HTML
 
     var photographers = AppState.get('photographers') || await API.fetchPhotographers();
     if (myVersion !== _detailVersion) return;
@@ -253,6 +292,13 @@ var Photographers = (function() {
     var events = eventsMap[photographerId] || [];
 
     _renderPhotographerDetail(container, photographer, events);
+
+    var _scrollToRestore = _savedPhotographerDetailScroll > 0 ? _savedPhotographerDetailScroll
+      : parseInt(sessionStorage.getItem('photographers-detail-scroll') || '0', 10);
+    if (_scrollToRestore > 0) {
+      var _dpRestore = container.closest('.split-panel-detail');
+      if (_dpRestore) _dpRestore.scrollTop = _scrollToRestore;
+    }
   }
 
   function _renderPhotographerDetail(container, photographer, events) {
@@ -388,11 +434,14 @@ var Photographers = (function() {
       onSave: async function(formData) {
         var updates = {};
         updates[paidField] = formData.amount;
+        if (typeof Realtime !== 'undefined' && Realtime.markLocalSave) Realtime.markLocalSave();
         await API.updateEventLogPayment(logId, updates);
 
         API.invalidateCache('photographer_leads');
-        await _loadPhotographerDetail(photographerId);
-        await window.initPhotographersList();
+        await Promise.all([
+          _loadPhotographerDetail(photographerId),
+          window.initPhotographersList()
+        ]);
       }
     });
   }
