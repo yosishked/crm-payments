@@ -135,3 +135,32 @@ Trigger על crm_editor_transactions מעדכן אוטומטית את crm_team.b
 ## SQL
 - תיקיית `sql/` לא ב-git — מיגרציות מריצים ידנית ב-Supabase SQL Editor
 - Realtime כבר מופעל על `crm_editor_transactions` (חלק מ-`supabase_realtime` publication)
+
+## מסך לקוחות — תצוגת רשימה/טבלה
+- toggle כרטיסיות/רשימה — שמור ב-localStorage ('clients-view-mode')
+- טבלה: שם הזוג, תאריך, צלם ראשי/שני (שם פרטי בלבד!), יתרה, שלב עריכה, עורכת
+- שלב עריכה: נשלף מ-crm_editing.stage דרך API.fetchClientEditingData() — צבעים זהים לcrm-editing
+- לחיצה על שורה: פותחת drawer צדי (position:fixed) עם overlay — לא split רגיל
+- _applyTableModeClass() מוסיף clients-table-mode ל-#clients-split
+- _openDrawer() / _closeDrawer() — חייב לקרוא _closeDrawer() גם בעת רנדור הרשימה (לא רק בסגירה!)
+- clients-drawer-overlay — div דינמי שמתווסף ל-body, מוסר כשיוצאים מ-table mode
+
+## note popup (ui-components.js)
+- UI.noteCell(text) — קוצר הערות ארוכות + פופאפ בלחיצה
+- משתמש ב-data-note + this.dataset.note (לא JSON.stringify ב-onclick — יגרום לבאג גרשיים)
+- escapeAttr() מקודד את ה-attribute, הבראוזר מפענח אוטומטית
+- חובה: event.stopPropagation() כדי למנוע בעבוע לשורת הטבלה
+- z-index: 9990
+
+## UX patterns — scroll + state (כל המודולים)
+- גלילה נשמרת ב-sessionStorage: MODULE-list-scroll, MODULE-detail-scroll
+- Scroll listeners מתווספים פעם אחת בלבד (_scrollListenersAdded flag)
+- רשומה פתוחה נשמרת ב-sessionStorage: MODULE-expanded-id
+- ספינר שקט: guard על .detail-card לפני הצגת spinner
+- soft refresh: replaceWith (לא remove+appendChild) — שומר על מיקום גלילה
+- מדריך מלא לכל הדפוסים: ../performance-ux-patterns.md
+
+## צבעי שלבי עריכה
+- מוגדרים ב-EDITING_STAGE_STYLES ב-clients.js
+- חייב להיות זהה לצבעים ב-crm-editing/css/style.css (badge-stage-*)
+- מקור אמת: crm-editing/css/style.css — שורות badge-stage-*
