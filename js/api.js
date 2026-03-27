@@ -311,6 +311,27 @@ var API = (function() {
   // CLIENTS
   // ==================================
 
+  async function fetchClientEditingData() {
+    var cached = _getCached('client_editing_data');
+    if (cached) return cached;
+
+    var { data, error } = await supabase
+      .from('crm_editing')
+      .select('lead_id, stage');
+
+    if (error) {
+      console.error('Error fetching client editing data:', error);
+      return {};
+    }
+
+    var byLead = {};
+    (data || []).forEach(function(e) {
+      if (e.lead_id) byLead[e.lead_id] = e.stage || '';
+    });
+    _setCache('client_editing_data', byLead);
+    return byLead;
+  }
+
   var _clientLeadFields = 'id, groom_first_name, bride_first_name, groom_phone, bride_phone, event_date, stage, ' +
     'package_price, second_photographer_price, package_extras, discount, ' +
     'overtime_price, second_overtime_price, night_shooting_price, ' +
@@ -499,8 +520,9 @@ var API = (function() {
     var { data, error } = await supabase
       .from('crm_leads')
       .select(_photographerLeadFields)
-      .eq('stage', 'חוזה נחתם')
-      .order('event_date', { ascending: false });
+      .not('stage', 'in', '("בוטל","לא נסגר")')
+      .order('event_date', { ascending: false })
+      .limit(10000);
 
     if (error) {
       console.error('Error fetching photographer leads:', error);
@@ -509,6 +531,15 @@ var API = (function() {
 
     _setCache('photographer_leads', data || []);
     return data || [];
+  }
+
+  async function updateLeadPhotographerCost(leadId, costField, value) {
+    var updates = {};
+    updates[costField] = value;
+    var { error } = await supabase.from('crm_leads').update(updates).eq('id', leadId);
+    if (error) { console.error('Error updating lead cost:', error); UI.toast('שגיאה בעדכון עלות', 'danger'); return false; }
+    invalidateCache('photographer_leads');
+    return true;
   }
 
   async function updateEventLogPayment(logId, updates) {
@@ -566,6 +597,7 @@ var API = (function() {
     updateEditorTransaction: updateEditorTransaction,
     createEditorOffset: createEditorOffset,
     // Clients
+    fetchClientEditingData: fetchClientEditingData,
     fetchClientLeads: fetchClientLeads,
     fetchClientTransactions: fetchClientTransactions,
     fetchAllClientTransactions: fetchAllClientTransactions,
@@ -578,6 +610,7 @@ var API = (function() {
     fetchPhotographers: fetchPhotographers,
     fetchPhotographerLeads: fetchPhotographerLeads,
     updateEventLogPayment: updateEventLogPayment,
+    updateLeadPhotographerCost: updateLeadPhotographerCost,
     // Generic
     updateRecord: updateRecord,
     invalidateCache: invalidateCache,
