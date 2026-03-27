@@ -166,6 +166,9 @@ var Clients = (function() {
 
     _highlightSelected(params.id);
     await _loadClientDetail(params.id);
+
+    // In table mode — open the detail as a side drawer
+    if (_viewMode === 'table') _openDrawer();
   };
 
   function _highlightSelected(leadId) {
@@ -175,6 +178,41 @@ var Clients = (function() {
     document.querySelectorAll('.client-table-row').forEach(function(el) {
       el.classList.toggle('client-row-active', el.getAttribute('data-client-id') === leadId);
     });
+  }
+
+  function _applyTableModeClass() {
+    var splitEl = document.getElementById('clients-split');
+    if (!splitEl) return;
+    if (_viewMode === 'table') {
+      splitEl.classList.add('clients-table-mode');
+      // Create overlay if not exists
+      if (!document.getElementById('clients-drawer-overlay')) {
+        var ov = document.createElement('div');
+        ov.id = 'clients-drawer-overlay';
+        ov.className = 'clients-drawer-overlay';
+        ov.addEventListener('click', function() { navigateTo('clients'); });
+        document.body.appendChild(ov);
+      }
+    } else {
+      splitEl.classList.remove('clients-table-mode');
+      splitEl.classList.remove('detail-open');
+      var ov = document.getElementById('clients-drawer-overlay');
+      if (ov) ov.remove();
+    }
+  }
+
+  function _openDrawer() {
+    var splitEl = document.getElementById('clients-split');
+    if (splitEl) splitEl.classList.add('detail-open');
+    var ov = document.getElementById('clients-drawer-overlay');
+    if (ov) ov.classList.add('visible');
+  }
+
+  function _closeDrawer() {
+    var splitEl = document.getElementById('clients-split');
+    if (splitEl) splitEl.classList.remove('detail-open');
+    var ov = document.getElementById('clients-drawer-overlay');
+    if (ov) ov.classList.remove('visible');
   }
 
   function _renderListHeader() {
@@ -233,6 +271,10 @@ var Clients = (function() {
     }
 
     container.innerHTML = html; // Note: escaped values only
+
+    // Apply / remove table-mode class + overlay
+    _applyTableModeClass();
+    if (_viewMode !== 'table') _closeDrawer();
 
     var _listPanel = container.closest('.split-panel-list');
     if (_listPanel) {
@@ -507,8 +549,15 @@ var Clients = (function() {
     // All strings passed through UI.escapeHtml before innerHTML assignment
     var html = '';
 
-    // Mobile back button
-    html += '<div class="detail-back-btn" onclick="navigateTo(\'clients\')">' + UI.escapeHtml('\u2192 חזרה לרשימה') + '</div>';
+    // Back / Close button (close drawer in table mode, back in cards/mobile mode)
+    if (_viewMode === 'table') {
+      html += '<div class="drawer-close-bar">' +
+        '<span class="drawer-couple-name">' + UI.escapeHtml(couple.trim()) + '</span>' +
+        '<button class="drawer-close-btn" onclick="navigateTo(\'clients\')" title="סגור">✕</button>' +
+      '</div>';
+    } else {
+      html += '<div class="detail-back-btn" onclick="navigateTo(\'clients\')">' + UI.escapeHtml('\u2192 חזרה לרשימה') + '</div>';
+    }
 
     // Summary card
     var totalBeforeVat = _calcTotalBeforeVat(lead, eventLog);

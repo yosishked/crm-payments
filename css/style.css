@@ -3722,3 +3722,80 @@ input.form-input-error + .cs-dropdown .cs-dropdown-btn {
   .clients-table thead th, .clients-table tbody td { padding: 8px 9px; }
   .editing-stage-pill { font-size: 10.5px; padding: 2px 7px; }
 }
+
+/* ---- Clients table mode — full width + drawer ---- */
+#clients-split.clients-table-mode {
+  display: block; /* override flex */
+  position: relative;
+}
+#clients-split.clients-table-mode .split-panel-list {
+  width: 100%; max-width: 100%;
+  flex: none;
+  border-left: none;
+}
+#clients-split.clients-table-mode .split-panel-detail {
+  position: fixed;
+  top: var(--topbar-height, 60px);
+  right: 0;
+  bottom: 0;
+  width: min(580px, 100vw);
+  z-index: 350;
+  background: var(--bg-card);
+  box-shadow: -6px 0 28px rgba(0,0,0,0.18);
+  transform: translateX(100%);
+  transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow-y: auto;
+  border-left: 1px solid var(--border);
+}
+#clients-split.clients-table-mode.detail-open .split-panel-detail {
+  transform: translateX(0);
+}
+
+/* Overlay behind drawer */
+.clients-drawer-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.32);
+  z-index: 349;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.28s ease;
+}
+.clients-drawer-overlay.visible {
+  opacity: 1; pointer-events: auto;
+}
+
+/* Drawer close bar */
+.drawer-close-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 20px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-card);
+  position: sticky; top: 0; z-index: 2;
+}
+.drawer-couple-name {
+  font-size: 16px; font-weight: 600; color: var(--text-primary);
+}
+.drawer-close-btn {
+  width: 32px; height: 32px;
+  border-radius: 50%; border: 1px solid var(--border);
+  background: var(--bg); cursor: pointer;
+  font-size: 16px; color: var(--text-secondary);
+  display: flex; align-items: center; justify-content: center;
+  line-height: 1; transition: all 0.15s;
+}
+.drawer-close-btn:hover {
+  background: var(--danger-light); color: var(--danger); border-color: var(--danger);
+}
+
+/* Table row striping + hover */
+.clients-table tbody tr:nth-child(even) { background: rgba(0,0,0,0.015); }
+.clients-table tbody tr:hover { background: var(--bg-sidebar-hover) !important; cursor: pointer; }
+.client-row-active { background: var(--accent-light) !important; }
+.clients-table tbody td:first-child { font-weight: 500; }
+
+@media (max-width: 600px) {
+  #clients-split.clients-table-mode .split-panel-detail {
+    top: 0; width: 100vw;
+    border-left: none;
+    border-radius: 0;
+  }
+}
