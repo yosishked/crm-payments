@@ -14,17 +14,18 @@ var Clients = (function() {
   var _clientScrollListenersAdded = false;
   var _viewMode = localStorage.getItem('clients-view-mode') || 'cards'; // cards | table
 
-  // Editing stage pill colors
+  // Editing stage pill colors — exact match to crm-editing badge colors
   var EDITING_STAGE_STYLES = {
-    'עריכה חדשה':               { bg: '#e0e7ff', color: '#4338ca' },
-    'נשלחה בקשה לשירים':       { bg: '#fef3c7', color: '#92400e' },
-    'בחרו שירים':               { bg: '#fee2e2', color: '#991b1b' },
-    'בעריכה':                   { bg: '#dbeafe', color: '#1e40af' },
-    'נשלח למשרד גרסה ראשונה':  { bg: '#d1fae5', color: '#065f46' },
-    'מוכן מחכה לתשלום':        { bg: '#a7f3d0', color: '#064e3b' },
-    'נשלח ללקוח גרסה ראשונה':  { bg: '#065f46', color: '#ffffff' },
-    'נשלח טופס לתיקונים':      { bg: '#cffafe', color: '#164e63' },
-    'ממתין לתיקונים מהלקוח':   { bg: '#ede9fe', color: '#5b21b6' },
+    'עריכה חדשה':               { bg: '#a1c6ff', color: '#000' },
+    'נשלחה בקשה לשירים':       { bg: '#ffba06', color: '#000' },
+    'בחרו שירים':               { bg: '#d54402', color: '#fff' },
+    'בעריכה':                   { bg: '#156fe2', color: '#fff' },
+    'נשלח למשרד גרסה ראשונה':  { bg: '#9be095', color: '#000' },
+    'מוכן מחכה לתשלום':        { bg: '#9be095', color: '#000' },
+    'נשלח ללקוח גרסה ראשונה':  { bg: '#016500', color: '#fff' },
+    'נשלח טופס לתיקונים':      { bg: '#74ebe2', color: '#000' },
+    'ממתין לתיקונים מהלקוח':   { bg: '#7d37ef', color: '#fff' },
+    'נכנס לתיקונים מהלקוח':    { bg: '#ffa6c1', color: '#000' },
   };
 
   function _renderEditingStagePill(stage) {
@@ -126,19 +127,23 @@ var Clients = (function() {
     ]);
     if (myVersion !== _listVersion) return;
 
-    // Build team name map: id -> { name, color }
+    // Build team name map: id -> { name, first_name, color }
     var teamMap = {};
     (teamMembers || []).forEach(function(t) {
       teamMap[t.id] = {
         name: ((t.first_name || '') + ' ' + (t.last_name || '')).trim(),
+        first_name: (t.first_name || '').trim(),
         color: PHOTOGRAPHER_COLORS[t.id] || ''
       };
     });
 
-    // Build editors map: id -> name
+    // Build editors map: id -> { name, first_name }
     var editorsMap = {};
     (editors || []).forEach(function(e) {
-      editorsMap[e.id] = ((e.first_name || '') + ' ' + (e.last_name || '')).trim();
+      editorsMap[e.id] = {
+        name: ((e.first_name || '') + ' ' + (e.last_name || '')).trim(),
+        first_name: (e.first_name || '').trim()
+      };
     });
 
     AppState.set('clientLeads', leads);
@@ -274,7 +279,7 @@ var Clients = (function() {
 
     // Apply / remove table-mode class + overlay
     _applyTableModeClass();
-    if (_viewMode !== 'table') _closeDrawer();
+    _closeDrawer(); // always close drawer when rendering list
 
     var _listPanel = container.closest('.split-panel-list');
     if (_listPanel) {
@@ -443,13 +448,14 @@ var Clients = (function() {
 
       // Editing stage + editor
       var editingStage = editingMap[lead.id] || '';
-      var editorName = (lead.editor_id && editorsMap[lead.editor_id]) ? editorsMap[lead.editor_id] : '-';
+      var editorObj = (lead.editor_id && editorsMap[lead.editor_id]) ? editorsMap[lead.editor_id] : null;
+      var editorName = editorObj ? (editorObj.first_name || editorObj.name) : '-';
 
       html += '<tr class="client-table-row' + isActive + '" data-client-id="' + UI.escapeHtml(lead.id) + '" onclick="navigateTo(\'clients/' + UI.escapeHtml(lead.id) + '\')">' +
         '<td class="client-table-name">' + UI.escapeHtml(couple) + '</td>' +
         '<td>' + UI.formatDate(lead.event_date) + '</td>' +
-        '<td>' + UI.escapeHtml(mainPh ? mainPh.name : '-') + '</td>' +
-        '<td>' + UI.escapeHtml(secondPh ? secondPh.name : '-') + '</td>' +
+        '<td>' + UI.escapeHtml(mainPh ? (mainPh.first_name || mainPh.name) : '-') + '</td>' +
+        '<td>' + UI.escapeHtml(secondPh ? (secondPh.first_name || secondPh.name) : '-') + '</td>' +
         '<td class="balance-cell ' + balClass + '">' + balHtml + '</td>' +
         '<td>' + _renderEditingStagePill(editingStage) + '</td>' +
         '<td>' + UI.escapeHtml(editorName) + '</td>' +
