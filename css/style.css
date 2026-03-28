@@ -2168,7 +2168,9 @@ input, select, textarea {
 
   /* Leads list takes full height on mobile */
   .split-panel-list {
-    min-height: calc(100vh - var(--mobile-nav-height));
+    height: calc(100vh - var(--mobile-nav-height));
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .leads-list-header {
