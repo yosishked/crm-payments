@@ -3637,6 +3637,10 @@ input.form-input-error + .cs-dropdown .cs-dropdown-btn {
 .events-section-card .clients-table { border-radius: 0; }
 .events-section-card .clients-list { padding: 0; }
 
+/* Sortable table headers */
+.sortable-th { cursor: pointer; user-select: none; }
+.sortable-th:hover { color: var(--accent); }
+
 /* Table progress bar — compact */
 .clients-table .progress-bar { height: 18px; min-width: 120px; }
 .clients-table .progress-label { font-size: 9px; }

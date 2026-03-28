@@ -11,6 +11,8 @@ var Clients = (function() {
   var _detailVersion = 0;
   var _currentFilter = 'all'; // all | unpaid | paid (legacy, kept for compat)
   var _collapsedClientSections = {};
+  var _sortColumn = ''; // name | date | main_ph | second_ph | balance | stage | editor
+  var _sortAsc = true;
   var _savedClientDetailScroll = 0;
   var _clientScrollListenersAdded = false;
   var _viewMode = localStorage.getItem('clients-view-mode') || 'cards'; // cards | table
@@ -479,21 +481,98 @@ var Clients = (function() {
     });
   }
 
+  function _sortArrow(col) {
+    if (_sortColumn !== col) return '';
+    return ' ' + (_sortAsc ? '▲' : '▼');
+  }
+
+  function _sortItems(items, teamMap, editingMap, editorsMap) {
+    if (!_sortColumn) return items;
+    var sorted = items.slice();
+    sorted.sort(function(a, b) {
+      var va, vb;
+      switch (_sortColumn) {
+        case 'name':
+          va = ((a.lead.groom_first_name || '') + ' ' + (a.lead.bride_first_name || '')).trim().toLowerCase();
+          vb = ((b.lead.groom_first_name || '') + ' ' + (b.lead.bride_first_name || '')).trim().toLowerCase();
+          return va < vb ? -1 : va > vb ? 1 : 0;
+        case 'date':
+          va = a.lead.event_date || '';
+          vb = b.lead.event_date || '';
+          return va < vb ? -1 : va > vb ? 1 : 0;
+        case 'main_ph':
+          var mA = (teamMap && a.lead.main_photographer_id) ? teamMap[a.lead.main_photographer_id] : null;
+          var mB = (teamMap && b.lead.main_photographer_id) ? teamMap[b.lead.main_photographer_id] : null;
+          va = (mA ? (mA.first_name || mA.name) : '').toLowerCase();
+          vb = (mB ? (mB.first_name || mB.name) : '').toLowerCase();
+          return va < vb ? -1 : va > vb ? 1 : 0;
+        case 'second_ph':
+          var sA = (teamMap && a.lead.second_photographer_id) ? teamMap[a.lead.second_photographer_id] : null;
+          var sB = (teamMap && b.lead.second_photographer_id) ? teamMap[b.lead.second_photographer_id] : null;
+          va = (sA ? (sA.first_name || sA.name) : '').toLowerCase();
+          vb = (sB ? (sB.first_name || sB.name) : '').toLowerCase();
+          return va < vb ? -1 : va > vb ? 1 : 0;
+        case 'balance':
+          return a.balance - b.balance;
+        case 'stage':
+          var edA = editingMap[a.lead.id] || {};
+          var edB = editingMap[b.lead.id] || {};
+          va = (typeof edA === 'string' ? edA : (edA.stage || '')).toLowerCase();
+          vb = (typeof edB === 'string' ? edB : (edB.stage || '')).toLowerCase();
+          return va < vb ? -1 : va > vb ? 1 : 0;
+        case 'editor':
+          var eoA = (a.lead.editor_id && editorsMap[a.lead.editor_id]) ? editorsMap[a.lead.editor_id] : null;
+          var eoB = (b.lead.editor_id && editorsMap[b.lead.editor_id]) ? editorsMap[b.lead.editor_id] : null;
+          va = (eoA ? (eoA.first_name || eoA.name) : '').toLowerCase();
+          vb = (eoB ? (eoB.first_name || eoB.name) : '').toLowerCase();
+          return va < vb ? -1 : va > vb ? 1 : 0;
+        default: return 0;
+      }
+    });
+    if (!_sortAsc) sorted.reverse();
+    return sorted;
+  }
+
+  function sortByColumn(col) {
+    if (_sortColumn === col) {
+      _sortAsc = !_sortAsc;
+    } else {
+      _sortColumn = col;
+      _sortAsc = (col === 'balance') ? false : true; // balance defaults high→low
+    }
+    // Re-render
+    var leads = AppState.get('clientLeads');
+    var eventLogs = AppState.get('clientEventLogs');
+    var teamMap = AppState.get('clientTeamMap');
+    var editingMap = AppState.get('clientEditingMap') || {};
+    var editorsMap = AppState.get('clientEditorsMap') || {};
+    if (!leads) return;
+    var leadIds = leads.map(function(l) { return l.id; });
+    API.fetchAllClientTransactions(leadIds).then(function(paidByLead) {
+      var container = document.getElementById('clients-view');
+      if (container) {
+        _renderClientsList(container, leads, paidByLead, eventLogs || {}, teamMap || {}, editingMap, editorsMap);
+        if (_currentLeadId) _highlightSelected(_currentLeadId);
+      }
+    });
+  }
+
   function _renderGroupTable(items, teamMap, editingMap, editorsMap) {
+    var sorted = _sortItems(items, teamMap, editingMap, editorsMap);
     var html = '<div class="clients-table-wrap">' +
       '<table class="clients-table">' +
       '<thead><tr>' +
-        '<th>שם הזוג</th>' +
-        '<th class="col-date">תאריך אירוע</th>' +
-        '<th>צלם ראשי</th>' +
-        '<th>צלם שני</th>' +
-        '<th>יתרה</th>' +
+        '<th class="sortable-th" onclick="Clients.sortByColumn(\'name\')">שם הזוג' + _sortArrow('name') + '</th>' +
+        '<th class="col-date sortable-th" onclick="Clients.sortByColumn(\'date\')">תאריך אירוע' + _sortArrow('date') + '</th>' +
+        '<th class="sortable-th" onclick="Clients.sortByColumn(\'main_ph\')">צלם ראשי' + _sortArrow('main_ph') + '</th>' +
+        '<th class="sortable-th" onclick="Clients.sortByColumn(\'second_ph\')">צלם שני' + _sortArrow('second_ph') + '</th>' +
+        '<th class="sortable-th" onclick="Clients.sortByColumn(\'balance\')">יתרה' + _sortArrow('balance') + '</th>' +
         '<th class="col-progress">תשלום</th>' +
-        '<th>שלב עריכה</th>' +
-        '<th class="col-editor">עורכת</th>' +
+        '<th class="sortable-th" onclick="Clients.sortByColumn(\'stage\')">שלב עריכה' + _sortArrow('stage') + '</th>' +
+        '<th class="col-editor sortable-th" onclick="Clients.sortByColumn(\'editor\')">עורכת' + _sortArrow('editor') + '</th>' +
       '</tr></thead><tbody>';
 
-    items.forEach(function(item) {
+    sorted.forEach(function(item) {
       var lead = item.lead;
       var balance = item.balance;
       var couple = ((lead.groom_first_name || '') + ' & ' + (lead.bride_first_name || '')).trim();
@@ -1222,6 +1301,7 @@ var Clients = (function() {
     filterByStatus: filterByStatus,
     setViewMode: setViewMode,
     toggleSection: toggleSection,
+    sortByColumn: sortByColumn,
     openAddPayment: openAddPayment,
     editPayment: editPayment,
     editLeadField: editLeadField,
