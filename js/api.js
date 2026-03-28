@@ -317,7 +317,7 @@ var API = (function() {
 
     var { data, error } = await supabase
       .from('crm_editing')
-      .select('lead_id, stage');
+      .select('lead_id, stage, editing_style_two_cameras');
 
     if (error) {
       console.error('Error fetching client editing data:', error);
@@ -326,7 +326,10 @@ var API = (function() {
 
     var byLead = {};
     (data || []).forEach(function(e) {
-      if (e.lead_id) byLead[e.lead_id] = e.stage || '';
+      if (e.lead_id) byLead[e.lead_id] = {
+        stage: e.stage || '',
+        editing_style_two_cameras: e.editing_style_two_cameras || ''
+      };
     });
     _setCache('client_editing_data', byLead);
     return byLead;

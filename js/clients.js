@@ -135,9 +135,14 @@ var Clients = (function() {
     return lead.event_date < '2025-01-01' ? 0.17 : 0.18;
   }
 
-  function _calcTotalWithVat(lead, log) {
+  function _calcTotalWithVat(lead, log, editingInfo) {
     var total = _calcTotalBeforeVat(lead, log);
-    return total + Math.round(total * _getVatRate(lead));
+    var withVat = total + Math.round(total * _getVatRate(lead));
+    // "2 האופציות" adds 500₪ including VAT
+    if (editingInfo && editingInfo.editing_style_two_cameras === '2 האופציות') {
+      withVat += 500;
+    }
+    return withVat;
   }
 
   // ==================================
@@ -297,7 +302,8 @@ var Clients = (function() {
       for (var i = 0; i < leads.length; i++) {
         var lead = leads[i];
         var log = eventLogs[lead.id] || null;
-        var totalWithVat = _calcTotalWithVat(lead, log);
+        var editInfo = (editingMap || {})[lead.id] || {};
+        var totalWithVat = _calcTotalWithVat(lead, log, typeof editInfo === 'object' ? editInfo : {});
         var paid = paidByLead[lead.id] || 0;
         var balance = totalWithVat - paid;
         var item = { lead: lead, totalWithVat: totalWithVat, paid: paid, balance: balance, log: log };
@@ -507,7 +513,8 @@ var Clients = (function() {
 
       var mainPh = (teamMap && lead.main_photographer_id) ? teamMap[lead.main_photographer_id] : null;
       var secondPh = (teamMap && lead.second_photographer_id) ? teamMap[lead.second_photographer_id] : null;
-      var editingStage = editingMap[lead.id] || '';
+      var editingData = editingMap[lead.id] || {};
+      var editingStage = typeof editingData === 'string' ? editingData : (editingData.stage || '');
       var editorObj = (lead.editor_id && editorsMap[lead.editor_id]) ? editorsMap[lead.editor_id] : null;
       var editorName = editorObj ? (editorObj.first_name || editorObj.name) : '-';
 
@@ -564,7 +571,8 @@ var Clients = (function() {
     for (var i = 0; i < leads.length; i++) {
       var lead = leads[i];
       var log = eventLogs[lead.id] || null;
-      var totalWithVat = _calcTotalWithVat(lead, log);
+      var editInfo3 = (editingMap || {})[lead.id] || {};
+      var totalWithVat = _calcTotalWithVat(lead, log, typeof editInfo3 === 'object' ? editInfo3 : {});
       var paid = paidByLead[lead.id] || 0;
       var balance = totalWithVat - paid;
       if (_currentFilter === 'unpaid' && balance <= 0) continue;
@@ -591,7 +599,8 @@ var Clients = (function() {
       var secondPh = (teamMap && lead.second_photographer_id) ? teamMap[lead.second_photographer_id] : null;
 
       // Editing stage + editor
-      var editingStage = editingMap[lead.id] || '';
+      var editingData2 = editingMap[lead.id] || {};
+      var editingStage = typeof editingData2 === 'string' ? editingData2 : (editingData2.stage || '');
       var editorObj = (lead.editor_id && editorsMap[lead.editor_id]) ? editorsMap[lead.editor_id] : null;
       var editorName = editorObj ? (editorObj.first_name || editorObj.name) : '-';
 
@@ -715,6 +724,10 @@ var Clients = (function() {
     var vatRate = _getVatRate(lead);
     var vat = Math.round(totalBeforeVat * vatRate);
     var totalWithVat = totalBeforeVat + vat;
+    // "2 האופציות" adds 500₪ including VAT
+    var detailEditInfo = (AppState.get('clientEditingMap') || {})[lead.id] || {};
+    var twoCamExtra = (typeof detailEditInfo === 'object' && detailEditInfo.editing_style_two_cameras === '2 האופציות') ? 500 : 0;
+    totalWithVat += twoCamExtra;
     var totalPaid = transactions.reduce(function(sum, tx) { return sum + (tx.amount || 0); }, 0);
     var remaining = totalWithVat - totalPaid;
 
@@ -736,13 +749,13 @@ var Clients = (function() {
     html += _renderTransactionsCard(lead, transactions, totalWithVat, totalPaid, remaining);
 
     // Price breakdown card (below transactions)
-    html += _renderPriceBreakdown(lead, eventLog, totalBeforeVat, vat, totalWithVat, vatRate);
+    html += _renderPriceBreakdown(lead, eventLog, totalBeforeVat, vat, totalWithVat, vatRate, twoCamExtra);
 
     // Note: innerHTML used with escaped values only (UI.escapeHtml)
     container.innerHTML = html;
   }
 
-  function _renderPriceBreakdown(lead, log, totalBeforeVat, vat, totalWithVat, vatRate) {
+  function _renderPriceBreakdown(lead, log, totalBeforeVat, vat, totalWithVat, vatRate, twoCamExtra) {
     var html = '<div class="detail-card">';
     html += '<div class="detail-section-title">' + UI.escapeHtml('פירוט מחיר') + '</div>';
 
@@ -783,6 +796,7 @@ var Clients = (function() {
     html += '<div class="price-divider"></div>';
     html += _priceRow('סה"כ לפני מע"מ', totalBeforeVat);
     html += _priceRow('מע"מ (' + Math.round(vatRate * 100) + '%)', vat);
+    if (twoCamExtra) html += _priceRow('תוספת 2 האופציות', twoCamExtra);
     html += _priceRowBold('סה"כ כולל מע"מ', totalWithVat);
     html += '</div>';
     html += '</div>';
@@ -914,7 +928,8 @@ var Clients = (function() {
     if (!lead) return;
 
     var log = eventLogs[leadId] || null;
-    var totalWithVat = _calcTotalWithVat(lead, log);
+    var editInfoDetail = (AppState.get('clientEditingMap') || {})[leadId] || {};
+    var totalWithVat = _calcTotalWithVat(lead, log, typeof editInfoDetail === 'object' ? editInfoDetail : {});
 
     // Fetch fresh transactions
     var transactions = await API.fetchClientTransactions(leadId);
