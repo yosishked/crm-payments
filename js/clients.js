@@ -130,9 +130,14 @@ var Clients = (function() {
     return baseDeal + otMain + otSecond + nightOt + mezuva + travel;
   }
 
+  function _getVatRate(lead) {
+    if (!lead || !lead.event_date) return 0.18;
+    return lead.event_date < '2025-01-01' ? 0.17 : 0.18;
+  }
+
   function _calcTotalWithVat(lead, log) {
     var total = _calcTotalBeforeVat(lead, log);
-    return total + Math.round(total * 0.18);
+    return total + Math.round(total * _getVatRate(lead));
   }
 
   // ==================================
@@ -707,7 +712,8 @@ var Clients = (function() {
 
     // Summary card
     var totalBeforeVat = _calcTotalBeforeVat(lead, eventLog);
-    var vat = Math.round(totalBeforeVat * 0.18);
+    var vatRate = _getVatRate(lead);
+    var vat = Math.round(totalBeforeVat * vatRate);
     var totalWithVat = totalBeforeVat + vat;
     var totalPaid = transactions.reduce(function(sum, tx) { return sum + (tx.amount || 0); }, 0);
     var remaining = totalWithVat - totalPaid;
@@ -730,13 +736,13 @@ var Clients = (function() {
     html += _renderTransactionsCard(lead, transactions, totalWithVat, totalPaid, remaining);
 
     // Price breakdown card (below transactions)
-    html += _renderPriceBreakdown(lead, eventLog, totalBeforeVat, vat, totalWithVat);
+    html += _renderPriceBreakdown(lead, eventLog, totalBeforeVat, vat, totalWithVat, vatRate);
 
     // Note: innerHTML used with escaped values only (UI.escapeHtml)
     container.innerHTML = html;
   }
 
-  function _renderPriceBreakdown(lead, log, totalBeforeVat, vat, totalWithVat) {
+  function _renderPriceBreakdown(lead, log, totalBeforeVat, vat, totalWithVat, vatRate) {
     var html = '<div class="detail-card">';
     html += '<div class="detail-section-title">' + UI.escapeHtml('פירוט מחיר') + '</div>';
 
@@ -776,7 +782,7 @@ var Clients = (function() {
 
     html += '<div class="price-divider"></div>';
     html += _priceRow('סה"כ לפני מע"מ', totalBeforeVat);
-    html += _priceRow('מע"מ (18%)', vat);
+    html += _priceRow('מע"מ (' + Math.round(vatRate * 100) + '%)', vat);
     html += _priceRowBold('סה"כ כולל מע"מ', totalWithVat);
     html += '</div>';
     html += '</div>';
