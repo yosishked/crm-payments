@@ -3637,6 +3637,11 @@ input.form-input-error + .cs-dropdown .cs-dropdown-btn {
 .events-section-card .clients-table { border-radius: 0; }
 .events-section-card .clients-list { padding: 0; }
 
+/* Table progress bar — compact */
+.clients-table .progress-bar { height: 18px; min-width: 120px; }
+.clients-table .progress-label { font-size: 9px; }
+.col-progress { white-space: nowrap; }
+
 /* ---- Note cell truncation + popup ---- */
 .note-truncated { cursor: pointer; color: var(--text-muted); text-decoration: underline dotted; }
 .note-popup-overlay {
@@ -3698,7 +3703,7 @@ input.form-input-error + .cs-dropdown .cs-dropdown-btn {
 }
 .clients-table {
   width: 100%; border-collapse: collapse; font-size: 13.5px;
-  min-width: 640px;
+  min-width: 780px;
 }
 .clients-table thead th {
   padding: 9px 12px; text-align: right;
@@ -3728,7 +3733,7 @@ input.form-input-error + .cs-dropdown .cs-dropdown-btn {
 
 /* Mobile — full-width table, smaller text, horizontal scroll */
 @media (max-width: 768px) {
-  .clients-table { font-size: 11.5px; min-width: 600px; }
+  .clients-table { font-size: 11.5px; min-width: 700px; }
   .clients-table thead th, .clients-table tbody td { padding: 7px 5px; }
   .clients-table thead th { font-size: 10px; }
   .editing-stage-pill { font-size: 10px; padding: 2px 6px; }

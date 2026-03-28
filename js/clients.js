@@ -477,6 +477,7 @@ var Clients = (function() {
         '<th>צלם ראשי</th>' +
         '<th>צלם שני</th>' +
         '<th>יתרה</th>' +
+        '<th class="col-progress">תשלום</th>' +
         '<th>שלב עריכה</th>' +
         '<th class="col-editor">עורכת</th>' +
       '</tr></thead><tbody>';
@@ -511,6 +512,7 @@ var Clients = (function() {
         '<td>' + _renderNamePill(mainPh ? (mainPh.first_name || mainPh.name) : '-', PHOTOGRAPHER_PILL_COLORS) + '</td>' +
         '<td>' + _renderNamePill(secondPh ? (secondPh.first_name || secondPh.name) : '-', PHOTOGRAPHER_PILL_COLORS) + '</td>' +
         '<td class="balance-cell ' + balClass + '">' + balHtml + '</td>' +
+        '<td class="col-progress">' + (item.totalWithVat > 0 ? UI.progressBar(item.paid, item.totalWithVat) : '') + '</td>' +
         '<td>' + _renderEditingStagePill(editingStage) + '</td>' +
         '<td class="col-editor">' + _renderNamePill(editorName, EDITOR_PILL_COLORS) + '</td>' +
       '</tr>';
@@ -548,6 +550,7 @@ var Clients = (function() {
         '<th>צלם ראשי</th>' +
         '<th>צלם שני</th>' +
         '<th>יתרה</th>' +
+        '<th class="col-progress">תשלום</th>' +
         '<th>שלב עריכה</th>' +
         '<th class="col-editor">עורכת</th>' +
       '</tr></thead><tbody>';
@@ -593,6 +596,7 @@ var Clients = (function() {
         '<td>' + _renderNamePill(mainPh ? (mainPh.first_name || mainPh.name) : '-', PHOTOGRAPHER_PILL_COLORS) + '</td>' +
         '<td>' + _renderNamePill(secondPh ? (secondPh.first_name || secondPh.name) : '-', PHOTOGRAPHER_PILL_COLORS) + '</td>' +
         '<td class="balance-cell ' + balClass + '">' + balHtml + '</td>' +
+        '<td class="col-progress">' + (totalWithVat > 0 ? UI.progressBar(paid, totalWithVat) : '') + '</td>' +
         '<td>' + _renderEditingStagePill(editingStage) + '</td>' +
         '<td class="col-editor">' + _renderNamePill(editorName, EDITOR_PILL_COLORS) + '</td>' +
       '</tr>';
@@ -600,7 +604,7 @@ var Clients = (function() {
     }
 
     if (visibleCount === 0) {
-      html += '<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--text-muted)">' +
+      html += '<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--text-muted)">' +
         UI.escapeHtml(_currentFilter === 'unpaid' ? 'אין לקוחות עם יתרה' : _currentFilter === 'paid' ? 'אין לקוחות ששולמו במלואם' : 'אין לקוחות') +
         '</td></tr>';
     }
