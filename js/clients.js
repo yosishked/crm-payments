@@ -10,9 +10,12 @@ var Clients = (function() {
   var _listVersion = 0;
   var _detailVersion = 0;
   var _currentFilter = 'all'; // all | unpaid | paid (legacy, kept for compat)
-  var _collapsedClientSections = {};
+  var _collapsedClientSections = JSON.parse(localStorage.getItem('clients-collapsed-sections') || '{}');
   var _sortColumn = ''; // name | date | main_ph | second_ph | balance | stage | editor
   var _sortAsc = true;
+  var _filterStages = JSON.parse(localStorage.getItem('clients-filter-stages') || '[]');
+  var _filterMainPh = localStorage.getItem('clients-filter-main-ph') || '';
+  var _filterSecondPh = localStorage.getItem('clients-filter-second-ph') || '';
   var _savedClientDetailScroll = 0;
   var _clientScrollListenersAdded = false;
   var _viewMode = localStorage.getItem('clients-view-mode') || 'cards'; // cards | table
@@ -83,6 +86,7 @@ var Clients = (function() {
     'אריאל': { bg: '#dd04a8', color: '#fff' },
     'שלומי': { bg: '#ffba06', color: '#000' },
     'יוסף':  { bg: '#05ddd5', color: '#000' },
+    'נעמה':  { bg: '#ffb68e', color: '#000' },
   };
 
   // Editor pill colors (from colors.md)
@@ -157,8 +161,17 @@ var Clients = (function() {
     var container = document.getElementById('clients-view');
     if (!container) return;
 
-    // ספינר רק בטעינה ראשונה — ריענון שקט אם כבר יש תוכן (escaped values only)
-    if (!container.querySelector('.client-card')) container.innerHTML = _renderListHeader() + UI.spinner();
+    // Skip full reload if list already rendered and we have cached data
+    var alreadyRendered = container.querySelector('.events-section-card') || container.querySelector('.clients-list') || container.querySelector('.clients-table');
+    if (alreadyRendered && AppState.get('clientLeads') && !(params && params._forceRefresh)) {
+      _currentLeadId = null;
+      _highlightSelected(null);
+      _closeDrawer();
+      return;
+    }
+
+    // Note: spinner uses escaped content only (UI.spinner returns safe HTML)
+    if (!alreadyRendered) container.innerHTML = _renderListHeader() + UI.spinner();
 
     var leads = await API.fetchClientLeads();
     if (myVersion !== _listVersion) return;
@@ -211,8 +224,14 @@ var Clients = (function() {
     if (!params || !params.id) return;
     _currentLeadId = params.id;
 
+    // Only load list if not already rendered (check for any content: sections, cards, or table)
     var listContainer = document.getElementById('clients-view');
-    if (listContainer && !listContainer.querySelector('.clients-list')) {
+    var hasContent = listContainer && (
+      listContainer.querySelector('.events-section-card') ||
+      listContainer.querySelector('.clients-list') ||
+      listContainer.querySelector('.clients-table')
+    );
+    if (!hasContent) {
       await window.initClientsList();
     }
 
@@ -269,6 +288,68 @@ var Clients = (function() {
 
   function _renderListHeader() {
     var isTable = _viewMode === 'table';
+
+    // Build stage options with colored pills
+    var stageKeys = Object.keys(EDITING_STAGE_STYLES);
+    var stageCheckboxes = '';
+    stageKeys.forEach(function(stage) {
+      var checked = _filterStages.length === 0 || _filterStages.indexOf(stage) > -1;
+      var s = EDITING_STAGE_STYLES[stage];
+      var pillStyle = 'display:inline-block;padding:1px 8px;border-radius:12px;font-size:11px;background:' + s.bg + ';color:' + s.color;
+      stageCheckboxes += '<label class="filter-checkbox-label"><input type="checkbox" value="' + UI.escapeHtml(stage) + '"' + (checked ? ' checked' : '') + ' onchange="Clients.applyStageFilter()"> <span style="' + pillStyle + '">' + UI.escapeHtml(stage) + '</span></label>';
+    });
+
+    // Build photographer checkbox dropdowns with colors
+    // Extra colors for team members not in PHOTOGRAPHER_PILL_COLORS
+    var EXTRA_COLORS = [
+      { bg: '#8b5cf6', color: '#fff' },
+      { bg: '#ec4899', color: '#fff' },
+      { bg: '#f97316', color: '#fff' },
+      { bg: '#14b8a6', color: '#000' },
+      { bg: '#6366f1', color: '#fff' },
+      { bg: '#84cc16', color: '#000' },
+    ];
+    var _extraIdx = 0;
+
+    // Collect all unique photographer names from teamMap
+    var teamMap = AppState.get('clientTeamMap') || {};
+    var allPhNames = [];
+    Object.keys(teamMap).forEach(function(id) {
+      var t = teamMap[id];
+      if (t && t.first_name && allPhNames.indexOf(t.first_name) === -1) allPhNames.push(t.first_name);
+    });
+
+    // Main photographer: only the 4 known ones
+    var mainPhNames = ['יוסי', 'אריאל', 'שלומי', 'יוסף'];
+
+    function _phPillStyle(name) {
+      var c = PHOTOGRAPHER_PILL_COLORS[name];
+      if (!c) {
+        c = EXTRA_COLORS[_extraIdx % EXTRA_COLORS.length];
+        _extraIdx++;
+      }
+      return 'display:inline-block;padding:1px 8px;border-radius:12px;font-size:11px;background:' + c.bg + ';color:' + c.color;
+    }
+
+    var mainPhCheckboxes = '<label class="filter-checkbox-label"><input type="radio" name="mainph" value=""' + (!_filterMainPh ? ' checked' : '') + ' onchange="Clients.setMainPhFilter(\'\')"> הכל</label>';
+    mainPhNames.forEach(function(name) {
+      mainPhCheckboxes += '<label class="filter-checkbox-label"><input type="radio" name="mainph" value="' + UI.escapeHtml(name) + '"' + (_filterMainPh === name ? ' checked' : '') + ' onchange="Clients.setMainPhFilter(this.value)"> <span style="' + _phPillStyle(name) + '">' + UI.escapeHtml(name) + '</span></label>';
+    });
+
+    _extraIdx = 0; // reset for second photographer
+    // Sort: known photographers first in order, then the rest
+    var knownOrder = ['יוסי', 'אריאל', 'שלומי', 'יוסף'];
+    var sortedPhNames = knownOrder.filter(function(n) { return allPhNames.indexOf(n) > -1; });
+    allPhNames.forEach(function(n) { if (sortedPhNames.indexOf(n) === -1) sortedPhNames.push(n); });
+
+    var secondPhCheckboxes = '<label class="filter-checkbox-label"><input type="radio" name="secondph" value=""' + (!_filterSecondPh ? ' checked' : '') + ' onchange="Clients.setSecondPhFilter(\'\')"> הכל</label>';
+    sortedPhNames.forEach(function(name) {
+      secondPhCheckboxes += '<label class="filter-checkbox-label"><input type="radio" name="secondph" value="' + UI.escapeHtml(name) + '"' + (_filterSecondPh === name ? ' checked' : '') + ' onchange="Clients.setSecondPhFilter(this.value)"> <span style="' + _phPillStyle(name) + '">' + UI.escapeHtml(name) + '</span></label>';
+    });
+
+    var hasStageFilter = _filterStages.length > 0 && _filterStages.length < stageKeys.length;
+    var hasAnyFilter = hasStageFilter || _filterMainPh || _filterSecondPh;
+
     return '<div class="list-header">' +
       '<div class="list-header-top">' +
         '<h2 class="list-title">' + UI.escapeHtml('לקוחות') + '</h2>' +
@@ -283,6 +364,37 @@ var Clients = (function() {
       '</div>' +
       '<div class="list-filters">' +
         '<input type="text" class="form-input" placeholder="חיפוש..." oninput="Clients.filterList(this.value)">' +
+      '</div>' +
+      '<div class="list-filters" style="flex-wrap:wrap;gap:4px">' +
+        '<div class="filter-dropdown-wrap">' +
+          '<button class="form-input list-filter-select filter-stage-btn' + (_filterMainPh ? ' filter-active' : '') + '" onclick="Clients.toggleDropdown(\'mainph-filter-dropdown\')" type="button">' +
+            UI.escapeHtml('צלם ראשי') + (_filterMainPh ? ': ' + UI.escapeHtml(_filterMainPh) : '') +
+          '</button>' +
+          '<div class="filter-stage-dropdown" id="mainph-filter-dropdown" style="display:none">' +
+            mainPhCheckboxes +
+          '</div>' +
+        '</div>' +
+        '<div class="filter-dropdown-wrap">' +
+          '<button class="form-input list-filter-select filter-stage-btn' + (_filterSecondPh ? ' filter-active' : '') + '" onclick="Clients.toggleDropdown(\'secondph-filter-dropdown\')" type="button">' +
+            UI.escapeHtml('צלם שני') + (_filterSecondPh ? ': ' + UI.escapeHtml(_filterSecondPh) : '') +
+          '</button>' +
+          '<div class="filter-stage-dropdown" id="secondph-filter-dropdown" style="display:none">' +
+            secondPhCheckboxes +
+          '</div>' +
+        '</div>' +
+        '<div class="filter-dropdown-wrap">' +
+          '<button class="form-input list-filter-select filter-stage-btn' + (hasStageFilter ? ' filter-active' : '') + '" onclick="Clients.toggleDropdown(\'stage-filter-dropdown\')" type="button">' +
+            UI.escapeHtml('שלב עריכה') + (hasStageFilter ? ' (' + _filterStages.length + ')' : '') +
+          '</button>' +
+          '<div class="filter-stage-dropdown" id="stage-filter-dropdown" style="display:none">' +
+            '<div class="filter-stage-actions">' +
+              '<a href="#" onclick="Clients.selectAllStages();return false">' + UI.escapeHtml('בחר הכל') + '</a>' +
+              '<a href="#" onclick="Clients.clearAllStages();return false">' + UI.escapeHtml('נקה הכל') + '</a>' +
+            '</div>' +
+            stageCheckboxes +
+          '</div>' +
+        '</div>' +
+        (hasAnyFilter ? '<button class="btn-clear-filters" onclick="Clients.clearAllFilters()" title="נקה סינון">✕ נקה</button>' : '') +
       '</div>' +
     '</div>';
   }
@@ -303,6 +415,23 @@ var Clients = (function() {
 
       for (var i = 0; i < leads.length; i++) {
         var lead = leads[i];
+
+        // Apply filters
+        if (_filterMainPh) {
+          var mph = (teamMap && lead.main_photographer_id) ? teamMap[lead.main_photographer_id] : null;
+          if (!mph || (mph.first_name || mph.name) !== _filterMainPh) continue;
+        }
+        if (_filterSecondPh) {
+          var sph = (teamMap && lead.second_photographer_id) ? teamMap[lead.second_photographer_id] : null;
+          if (!sph || (sph.first_name || sph.name) !== _filterSecondPh) continue;
+        }
+        if (_filterStages.length > 0) {
+          var ed = (editingMap || {})[lead.id] || {};
+          var stg = typeof ed === 'string' ? ed : (ed.stage || '');
+          if (stg && _filterStages.indexOf(stg) === -1) continue;
+          if (!stg && _filterStages.length < Object.keys(EDITING_STAGE_STYLES).length) continue;
+        }
+
         var log = eventLogs[lead.id] || null;
         var editInfo = (editingMap || {})[lead.id] || {};
         var totalWithVat = _calcTotalWithVat(lead, log, typeof editInfo === 'object' ? editInfo : {});
@@ -613,9 +742,7 @@ var Clients = (function() {
     return html;
   }
 
-  function toggleSection(key) {
-    _collapsedClientSections[key] = !_collapsedClientSections[key];
-    // Re-render without refetching
+  function _reRenderList() {
     var leads = AppState.get('clientLeads');
     var eventLogs = AppState.get('clientEventLogs');
     var teamMap = AppState.get('clientTeamMap');
@@ -630,6 +757,69 @@ var Clients = (function() {
         if (_currentLeadId) _highlightSelected(_currentLeadId);
       }
     });
+  }
+
+  function toggleSection(key) {
+    _collapsedClientSections[key] = !_collapsedClientSections[key];
+    localStorage.setItem('clients-collapsed-sections', JSON.stringify(_collapsedClientSections));
+    _reRenderList();
+  }
+
+  function setMainPhFilter(val) {
+    _filterMainPh = val;
+    localStorage.setItem('clients-filter-main-ph', val);
+    _reRenderList();
+  }
+
+  function setSecondPhFilter(val) {
+    _filterSecondPh = val;
+    localStorage.setItem('clients-filter-second-ph', val);
+    _reRenderList();
+  }
+
+  function toggleDropdown(id) {
+    // Close all other dropdowns first
+    document.querySelectorAll('.filter-stage-dropdown').forEach(function(dd) {
+      if (dd.id !== id) dd.style.display = 'none';
+    });
+    var dd = document.getElementById(id);
+    if (dd) dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
+  }
+
+  function toggleStageDropdown() { toggleDropdown('stage-filter-dropdown'); }
+
+  function applyStageFilter() {
+    var checkboxes = document.querySelectorAll('#stage-filter-dropdown input[type="checkbox"]');
+    var selected = [];
+    checkboxes.forEach(function(cb) {
+      if (cb.checked) selected.push(cb.value);
+    });
+    // If all are selected, treat as "no filter"
+    _filterStages = selected.length === Object.keys(EDITING_STAGE_STYLES).length ? [] : selected;
+    localStorage.setItem('clients-filter-stages', JSON.stringify(_filterStages));
+    _reRenderList();
+  }
+
+  function selectAllStages() {
+    _filterStages = [];
+    localStorage.setItem('clients-filter-stages', '[]');
+    _reRenderList();
+  }
+
+  function clearAllStages() {
+    _filterStages = ['__none__'];
+    localStorage.setItem('clients-filter-stages', JSON.stringify(_filterStages));
+    _reRenderList();
+  }
+
+  function clearAllFilters() {
+    _filterStages = [];
+    _filterMainPh = '';
+    _filterSecondPh = '';
+    localStorage.removeItem('clients-filter-stages');
+    localStorage.removeItem('clients-filter-main-ph');
+    localStorage.removeItem('clients-filter-second-ph');
+    _reRenderList();
   }
 
   function _renderClientsTableInner(leads, paidByLead, eventLogs, teamMap, editingMap, editorsMap) {
@@ -991,7 +1181,11 @@ var Clients = (function() {
   // SOFT REFRESH (update sidebar card + summary, no detail DOM rebuild)
   // ==================================
 
+  var _isSoftRefreshing = false;
   window._softRefreshClientDetail = async function(leadId) {
+    if (_isSoftRefreshing) return;
+    _isSoftRefreshing = true;
+
     // Invalidate caches so we fetch fresh data
     API.invalidateCache('client_leads');
     AppState.set('clientLeads', null);
@@ -1045,6 +1239,8 @@ var Clients = (function() {
     if (detailContainer) {
       _renderClientDetail(detailContainer, lead, log, transactions);
     }
+
+    _isSoftRefreshing = false;
   };
 
   // Full load exposed for realtime remote refresh (with fade handled by realtime.js)
@@ -1105,7 +1301,6 @@ var Clients = (function() {
           screenshotUrl = await UI.uploadScreenshot(_uploadArea.getFile(), leadId);
         }
 
-        Realtime.markLocalSave();
         var clientTx = await API.createClientTransaction({
           lead_id: leadId,
           amount: formData.amount,
@@ -1136,7 +1331,9 @@ var Clients = (function() {
           }
         }
 
-        // markLocalSave() schedules soft refresh — no full rebuild needed
+        // Block realtime echo + refresh
+        Realtime.markLocalSave();
+        window._softRefreshClientDetail(leadId);
       }
     });
   }
@@ -1188,7 +1385,6 @@ var Clients = (function() {
             screenshotUrl = null;
           }
 
-          Realtime.markLocalSave();
           await API.updateClientTransaction(txId, {
             amount: formData.amount,
             payment_method: formData.payment_method,
@@ -1206,7 +1402,8 @@ var Clients = (function() {
             });
           }
 
-          // markLocalSave() schedules soft refresh — no full rebuild needed
+          Realtime.markLocalSave();
+          window._softRefreshClientDetail(leadId);
         }
       });
     });
@@ -1225,11 +1422,8 @@ var Clients = (function() {
         title: 'מחיקת תשלום',
         message: message,
         onConfirm: async function() {
-          Realtime.markLocalSave();
-
           // Delete linked editor transaction first (before client tx, due to FK)
           if (isLinked) {
-            // Also delete editor tx screenshot if exists
             var { data: edTx } = await supabase.from('crm_editor_transactions').select('transfer_screenshot').eq('id', tx.linked_editor_transaction_id).maybeSingle();
             if (edTx && edTx.transfer_screenshot) await UI.deleteScreenshotStorage(edTx.transfer_screenshot);
             await API.deleteEditorTransaction(tx.linked_editor_transaction_id);
@@ -1250,7 +1444,9 @@ var Clients = (function() {
           if (tx.transfer_screenshot) await UI.deleteScreenshotStorage(tx.transfer_screenshot);
 
           await API.deleteClientTransaction(txId);
-          // markLocalSave() schedules soft refresh — no full rebuild needed
+
+          Realtime.markLocalSave();
+          window._softRefreshClientDetail(leadId);
         }
       });
     });
@@ -1272,7 +1468,6 @@ var Clients = (function() {
         var updates = {};
         updates[fieldName] = formData.value || 0;
 
-        Realtime.markLocalSave(); // Start cooldown (block realtime echo)
         var { error } = await supabase
           .from('crm_leads')
           .update(updates)
@@ -1284,10 +1479,11 @@ var Clients = (function() {
         }
         UI.toast('עודכן', 'success');
 
-        // Clear caches, then schedule soft refresh
+        // Clear caches, then refresh
         API.invalidateCache('client_leads');
         AppState.set('clientLeads', null);
         Realtime.markLocalSave();
+        window._softRefreshClientDetail(leadId);
       }
     });
   }
@@ -1302,6 +1498,14 @@ var Clients = (function() {
     setViewMode: setViewMode,
     toggleSection: toggleSection,
     sortByColumn: sortByColumn,
+    setMainPhFilter: setMainPhFilter,
+    setSecondPhFilter: setSecondPhFilter,
+    toggleStageDropdown: toggleStageDropdown,
+    toggleDropdown: toggleDropdown,
+    applyStageFilter: applyStageFilter,
+    selectAllStages: selectAllStages,
+    clearAllStages: clearAllStages,
+    clearAllFilters: clearAllFilters,
     openAddPayment: openAddPayment,
     editPayment: editPayment,
     editLeadField: editLeadField,

@@ -345,11 +345,24 @@ var API = (function() {
     var cached = _getCached('client_leads');
     if (cached) return cached;
 
-    var { data, error } = await supabase
-      .from('crm_leads')
-      .select(_clientLeadFields)
-      .not('stage', 'in', '("בקשה לחוזה","חוזה נשלח","נשלח פלאואפ","לא סגרו","בוטל")')
-      .order('event_date', { ascending: false });
+    // Paginate to get all leads (Supabase default limit 1000)
+    var allLeads = [];
+    var lpSize = 1000;
+    var lpOff = 0;
+    var lpMore = true;
+    while (lpMore) {
+      var { data, error } = await supabase
+        .from('crm_leads')
+        .select(_clientLeadFields)
+        .not('stage', 'in', '("בקשה לחוזה","חוזה נשלח","נשלח פלאואפ","לא סגרו","בוטל")')
+        .order('event_date', { ascending: false })
+        .range(lpOff, lpOff + lpSize - 1);
+      if (error) break;
+      allLeads = allLeads.concat(data || []);
+      lpMore = (data && data.length === lpSize);
+      lpOff += lpSize;
+    }
+    data = allLeads;
 
     if (error) {
       console.error('Error fetching client leads:', error);
@@ -378,20 +391,19 @@ var API = (function() {
   async function fetchAllClientTransactions(leadIds) {
     if (!leadIds || leadIds.length === 0) return {};
 
-    // Fetch all transactions (no .in() filter — avoids PostgREST UUID issues)
+    // Use DB view for pre-aggregated totals (no pagination needed, ~500 rows vs 2000+)
     var { data, error } = await supabase
-      .from('crm_client_transactions')
-      .select('lead_id, amount');
+      .from('v_client_paid')
+      .select('lead_id, total_paid');
 
     if (error) {
-      console.error('Error fetching all client transactions:', error);
+      console.error('Error fetching client paid totals:', error);
       return {};
     }
 
     var byLead = {};
-    (data || []).forEach(function(tx) {
-      if (!byLead[tx.lead_id]) byLead[tx.lead_id] = 0;
-      byLead[tx.lead_id] += (tx.amount || 0);
+    (data || []).forEach(function(row) {
+      byLead[row.lead_id] = row.total_paid || 0;
     });
     return byLead;
   }
@@ -414,18 +426,24 @@ var API = (function() {
   async function fetchAllEventLogs(leadIds) {
     if (!leadIds || leadIds.length === 0) return {};
 
-    // Fetch all event logs (no .in() filter — avoids PostgREST UUID issues)
-    var { data, error } = await supabase
-      .from('crm_event_logs')
-      .select('id, lead_id, overtime_hours_main, overtime_hours_second, overtime_hours_assistant, night_overtime_hours, mezuva_hours, travel_addition_main, travel_addition_second, paid_main_photographer, paid_second_photographer, paid_assistant');
-
-    if (error) {
-      console.error('Error fetching all event logs:', error);
-      return {};
+    // Fetch all event logs with pagination
+    var allLogs = [];
+    var pgSize = 1000;
+    var pgOff = 0;
+    var pgMore = true;
+    while (pgMore) {
+      var { data, error } = await supabase
+        .from('crm_event_logs')
+        .select('id, lead_id, overtime_hours_main, overtime_hours_second, overtime_hours_assistant, night_overtime_hours, mezuva_hours, travel_addition_main, travel_addition_second, paid_main_photographer, paid_second_photographer, paid_assistant')
+        .range(pgOff, pgOff + pgSize - 1);
+      if (error) { console.error('Error fetching all event logs:', error); break; }
+      allLogs = allLogs.concat(data || []);
+      pgMore = (data && data.length === pgSize);
+      pgOff += pgSize;
     }
 
     var byLead = {};
-    (data || []).forEach(function(log) {
+    allLogs.forEach(function(log) {
       byLead[log.lead_id] = log;
     });
     return byLead;

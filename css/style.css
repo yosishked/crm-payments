@@ -2221,7 +2221,8 @@ input, select, textarea {
 
   /* List header */
   .list-header {
-    padding: 12px 14px 8px;
+    padding: 10px 14px 8px;
+    gap: 6px;
   }
 
   .list-title {
@@ -2229,13 +2230,25 @@ input, select, textarea {
   }
 
   .list-filters {
-    flex-direction: column;
-    gap: 6px;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 4px !important;
   }
 
-  .list-filter-select {
+  .list-filters input[type="text"] {
     width: 100%;
+    flex: 1 1 100%;
   }
+
+  .list-filter-select, .filter-stage-btn {
+    font-size: 11px !important;
+    padding: 5px 8px !important;
+    min-width: auto !important;
+  }
+
+  .filter-dropdown-wrap { flex: 0 0 auto; }
+
+  .btn-clear-filters { font-size: 11px; padding: 3px 8px; }
 
   /* Cards in list: flush edges on mobile */
   .editor-card,
@@ -3514,6 +3527,10 @@ input.form-input-error + .cs-dropdown .cs-dropdown-btn {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--bg);
 }
 
 .list-title {
@@ -3636,6 +3653,43 @@ input.form-input-error + .cs-dropdown .cs-dropdown-btn {
 .events-section-card .clients-table-wrap { margin: 0; }
 .events-section-card .clients-table { border-radius: 0; }
 .events-section-card .clients-list { padding: 0; }
+
+/* ---- Client filter dropdowns ---- */
+.filter-dropdown-wrap { position: relative; }
+.filter-stage-btn { cursor: pointer; text-align: right; min-width: 100px; }
+.filter-stage-btn.filter-active { background: var(--accent-light); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.filter-stage-dropdown {
+  position: absolute; top: 100%; right: 0; z-index: 100;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow-md); padding: 8px 0; min-width: 220px; max-height: 320px; overflow-y: auto;
+}
+.filter-stage-dropdown .filter-stage-actions {
+  display: flex; justify-content: space-between; padding: 4px 12px 8px; border-bottom: 1px solid var(--border); margin-bottom: 4px;
+  font-size: 12px;
+}
+.filter-stage-dropdown .filter-stage-actions a { color: var(--accent); text-decoration: none; }
+.filter-checkbox-label {
+  display: block; padding: 4px 12px; font-size: 12.5px; cursor: pointer; white-space: nowrap;
+}
+.filter-checkbox-label:hover { background: var(--bg-sidebar-hover); }
+.filter-checkbox-label input { margin-left: 6px; }
+.btn-clear-filters {
+  background: var(--danger-light); color: var(--danger); border: 1px solid var(--danger);
+  border-radius: var(--radius-sm); padding: 4px 10px; font-size: 12px; cursor: pointer;
+  white-space: nowrap;
+}
+.btn-clear-filters:hover { background: var(--danger); color: #fff; }
+
+/* Filter pill buttons */
+.filter-pill-group { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.filter-pill-label { font-size: 11px; color: var(--text-secondary); font-weight: 600; margin-left: 2px; }
+.filter-pill-btn {
+  display: inline-block; padding: 3px 10px; border-radius: 20px;
+  font-size: 11.5px; font-weight: 600; cursor: pointer; white-space: nowrap;
+  transition: opacity 0.15s, transform 0.1s;
+}
+.filter-pill-btn:hover { opacity: 0.8 !important; }
+.filter-pill-btn.active { opacity: 1 !important; box-shadow: 0 0 0 2px rgba(0,0,0,0.2); }
 
 /* Sortable table headers */
 .sortable-th { cursor: pointer; user-select: none; }
