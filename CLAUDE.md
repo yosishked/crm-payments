@@ -99,7 +99,18 @@ Trigger על crm_editor_transactions מעדכן אוטומטית את crm_team.b
 - סינון: הכל / לא שולם / שולם
 - חיפוש חופשי
 - באדג'ים צבעוניים לצלמים (כחול, אדום, צהוב, טורקיז)
-- פירוט מחיר משוקלל: package_price + second_photographer + package_extras - discount + event_extras × 1.18
+- פירוט מחיר משוקלל: package_price + second_photographer + package_extras - discount + event_extras × מע"מ + תוספת "2 האופציות"
+- **מע"מ דינמי**: 17% לפני 01.01.2025, 18% אחרי — `_getVatRate(lead)` לפי event_date
+- **תוספת "2 האופציות"**: 500₪ כולל מע"מ כש-`editing_style_two_cameras === '2 האופציות'` ב-crm_editing (נשלף ב-`fetchClientEditingData`)
+- **v_client_paid View**: סיכום תשלומים מהDB (SUM+GROUP BY) — מחליף שליפת כל התנועות, ללא pagination
+
+## מסך לקוחות — פילטרים ומיון
+- **פילטרים**: צלם ראשי (4), צלם שני (כל הצוות), שלב עריכה (multi-select) — dropdowns צבעוניים
+- **מיון**: לחיצה על כותרת עמודה (▲/▼) — שם, תאריך, צלם, יתרה, שלב, עורכת
+- **חיפוש חופשי**: על כל השדות (שם, תאריך, צלם, עורכת)
+- **שמירת מצב**: פילטרים + מצב פתוח/סגור של קטגוריות + view mode — הכל ב-localStorage
+- **header sticky**: חיפוש + פילטרים קבועים למעלה בגלילה
+- **קטגוריות מתקפלות**: זיכוי (ירוק), חוב (אדום), שולם — כמו עמוד עורכות
 - שדות עריכים: package_extras, discount (עריכה ישירה מהתשלומים)
 - מקורות תנועות: CRM, יומן אירוע, לקוח לעורכת
 
