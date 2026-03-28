@@ -155,12 +155,4 @@ function _updateSidebarActive(hash) {
 
 window.addEventListener('hashchange', window.handleRoute);
 
-// When returning from background tab — do a clean single refresh
-document.addEventListener('visibilitychange', function() {
-  if (document.visibilityState === 'visible' && AppState.get('user')) {
-    setTimeout(function() {
-      _lastRouteHash = null;
-      window.handleRoute();
-    }, 1000);
-  }
-});
+// Removed: visibilitychange refresh — Realtime handles live updates
