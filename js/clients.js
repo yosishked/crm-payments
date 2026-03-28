@@ -9,7 +9,8 @@ var Clients = (function() {
   var _currentLeadId = null;
   var _listVersion = 0;
   var _detailVersion = 0;
-  var _currentFilter = 'all'; // all | unpaid | paid
+  var _currentFilter = 'all'; // all | unpaid | paid (legacy, kept for compat)
+  var _collapsedClientSections = {};
   var _savedClientDetailScroll = 0;
   var _clientScrollListenersAdded = false;
   var _viewMode = localStorage.getItem('clients-view-mode') || 'cards'; // cards | table
@@ -25,7 +26,15 @@ var Clients = (function() {
     'נשלח ללקוח גרסה ראשונה':  { bg: '#016500', color: '#fff' },
     'נשלח טופס לתיקונים':      { bg: '#74ebe2', color: '#000' },
     'ממתין לתיקונים מהלקוח':   { bg: '#7d37ef', color: '#fff' },
-    'נכנס לתיקונים מהלקוח':    { bg: '#ffa6c1', color: '#000' },
+    'נכנס לתיקונים מהלקוח':           { bg: '#ffa6c1', color: '#000' },
+    'נשלח למשרד תיקונים מהלקוח':     { bg: '#9be095', color: '#000' },
+    'גרסה מתוקנת נשלחה ללקוח':       { bg: '#016500', color: '#fff' },
+    'נשלח טופס בקשת כתובת':          { bg: '#a1c6ff', color: '#000' },
+    'מחכה לשליחה לדואר':             { bg: '#dc053c', color: '#fff' },
+    'נשלח בדואר':                     { bg: '#d0f5d1', color: '#000' },
+    'נמסר סופית בדואר':              { bg: '#016500', color: '#fff' },
+    'בוטל':                           { bg: '#fad3fc', color: '#000' },
+    'נשלחה בקשת שירים':              { bg: '#ffba06', color: '#000' },
   };
 
   function _renderEditingStagePill(stage) {
@@ -65,6 +74,32 @@ var Clients = (function() {
     'f5bce3a4-b7f5-4abc-8609-e67cbced629e': 'yellow-dark',
     '6737dfcd-116e-41c0-8fe6-3272ca9a29a3': 'teal',
   };
+
+  // Photographer pill colors (from colors.md)
+  var PHOTOGRAPHER_PILL_COLORS = {
+    'יוסי':  { bg: '#156fe2', color: '#fff' },
+    'אריאל': { bg: '#dd04a8', color: '#fff' },
+    'שלומי': { bg: '#ffba06', color: '#000' },
+    'יוסף':  { bg: '#05ddd5', color: '#000' },
+  };
+
+  // Editor pill colors (from colors.md)
+  var EDITOR_PILL_COLORS = {
+    'נעמה':  { bg: '#ffb68e', color: '#000' },
+    'אסנת':  { bg: '#dd04a8', color: '#fff' },
+    'אסתר':  { bg: '#616670', color: '#fff' },
+    'אסתי':  { bg: '#7d37ef', color: '#fff' },
+    'רוחמי': { bg: '#068a0d', color: '#fff' },
+    'מירי':  { bg: '#39caff', color: '#000' },
+    'תהילה': { bg: '#ab0b84', color: '#fff' },
+  };
+
+  function _renderNamePill(name, colorMap) {
+    if (!name || name === '-') return '<span style="color:var(--text-muted)">-</span>';
+    var c = colorMap[name];
+    if (!c) return UI.escapeHtml(name);
+    return '<span class="editing-stage-pill" style="background:' + c.bg + ';color:' + c.color + '">' + UI.escapeHtml(name) + '</span>';
+  }
 
   // ==================================
   // PRICE CALCULATIONS
@@ -235,11 +270,6 @@ var Clients = (function() {
         '</div>' +
       '</div>' +
       '<div class="list-filters">' +
-        '<select class="form-input list-filter-select" onchange="Clients.filterByStatus(this.value)">' +
-          '<option value="all"' + (_currentFilter === 'all' ? ' selected' : '') + '>' + UI.escapeHtml('הכל') + '</option>' +
-          '<option value="unpaid"' + (_currentFilter === 'unpaid' ? ' selected' : '') + '>' + UI.escapeHtml('לא שולם') + '</option>' +
-          '<option value="paid"' + (_currentFilter === 'paid' ? ' selected' : '') + '>' + UI.escapeHtml('שולם') + '</option>' +
-        '</select>' +
         '<input type="text" class="form-input" placeholder="חיפוש..." oninput="Clients.filterList(this.value)">' +
       '</div>' +
     '</div>';
@@ -249,30 +279,65 @@ var Clients = (function() {
     // Note: innerHTML used with escaped values only (UI.escapeHtml)
     var html = _renderListHeader();
 
-    if (_viewMode === 'table') {
-      html += _renderClientsTableInner(leads, paidByLead, eventLogs, teamMap, editingMap || {}, editorsMap || {});
+    if (leads.length === 0) {
+      html += '<div class="clients-list">' + UI.emptyState('אין לקוחות עם חוזה חתום') + '</div>';
     } else {
-      html += '<div class="clients-list">';
-      if (leads.length === 0) {
-        html += UI.emptyState('אין לקוחות עם חוזה חתום');
-      } else {
-        var visibleCount = 0;
-        for (var i = 0; i < leads.length; i++) {
-          var lead = leads[i];
-          var log = eventLogs[lead.id] || null;
-          var totalWithVat = _calcTotalWithVat(lead, log);
-          var paid = paidByLead[lead.id] || 0;
-          var balance = totalWithVat - paid;
-          if (_currentFilter === 'unpaid' && balance <= 0) continue;
-          if (_currentFilter === 'paid' && balance > 0) continue;
-          html += _renderClientCard(lead, totalWithVat, paid, balance, teamMap);
-          visibleCount++;
-        }
-        if (visibleCount === 0) {
-          html += UI.emptyState(_currentFilter === 'unpaid' ? 'אין לקוחות עם יתרה' : 'אין לקוחות ששולמו במלואם');
+      // Group leads by balance status
+      var groups = {
+        credit:  { label: 'זיכוי',  leads: [], total: 0, colorClass: 'section-client-credit' },
+        owed:    { label: 'חוב',    leads: [], total: 0, colorClass: 'section-client-owed' },
+        settled: { label: 'שולם',   leads: [], total: 0, colorClass: 'section-client-settled' }
+      };
+
+      for (var i = 0; i < leads.length; i++) {
+        var lead = leads[i];
+        var log = eventLogs[lead.id] || null;
+        var totalWithVat = _calcTotalWithVat(lead, log);
+        var paid = paidByLead[lead.id] || 0;
+        var balance = totalWithVat - paid;
+        var item = { lead: lead, totalWithVat: totalWithVat, paid: paid, balance: balance, log: log };
+
+        if (balance > 1) {
+          groups.owed.leads.push(item);
+          groups.owed.total += balance;
+        } else if (balance < -1) {
+          groups.credit.leads.push(item);
+          groups.credit.total += balance;
+        } else {
+          groups.settled.leads.push(item);
         }
       }
-      html += '</div>';
+
+      var groupOrder = ['credit', 'owed', 'settled'];
+      groupOrder.forEach(function(key) {
+        var group = groups[key];
+        if (group.leads.length === 0) return;
+
+        var isCollapsed = _collapsedClientSections[key] === true;
+        var arrow = isCollapsed ? '◀' : '▼';
+        var totalText = key !== 'settled' ? UI.formatCurrency(Math.abs(group.total)) : '';
+
+        html += '<div class="detail-card events-section-card">';
+        html += '<div class="events-section-header ' + group.colorClass + '" onclick="Clients.toggleSection(\'' + key + '\')">' +
+          '<span class="events-section-label">' + UI.escapeHtml(group.label) + ' <span class="events-section-count">(' + group.leads.length + ')</span></span>' +
+          '<span class="events-section-total">' + UI.escapeHtml(totalText) + '</span>' +
+          '<span class="events-section-arrow">' + arrow + '</span>' +
+        '</div>';
+
+        if (!isCollapsed) {
+          if (_viewMode === 'table') {
+            html += _renderGroupTable(group.leads, teamMap, editingMap || {}, editorsMap || {});
+          } else {
+            html += '<div class="clients-list">';
+            group.leads.forEach(function(item) {
+              html += _renderClientCard(item.lead, item.totalWithVat, item.paid, item.balance, teamMap);
+            });
+            html += '</div>';
+          }
+        }
+
+        html += '</div>';
+      });
     }
 
     container.innerHTML = html; // Note: escaped values only
@@ -311,10 +376,10 @@ var Clients = (function() {
 
     var balanceClass = 'balance-zero';
     var balanceLabel = 'שולם במלואו';
-    if (balance > 0) {
+    if (balance > 1) {
       balanceClass = 'balance-owed';
       balanceLabel = 'נשאר: ' + UI.formatCurrency(balance);
-    } else if (balance < 0) {
+    } else if (balance < -1) {
       balanceClass = 'balance-credit';
       balanceLabel = 'זיכוי: ' + UI.formatCurrency(Math.abs(balance));
     }
@@ -353,15 +418,15 @@ var Clients = (function() {
 
   function filterList(searchTerm) {
     var term = (searchTerm || '').toLowerCase();
-    // Cards mode
+    // Cards mode — search name + date
     document.querySelectorAll('.client-card').forEach(function(card) {
-      var name = (card.querySelector('.client-card-name') || {}).textContent || '';
-      card.style.display = name.toLowerCase().indexOf(term) > -1 ? '' : 'none';
+      var text = card.textContent || '';
+      card.style.display = text.toLowerCase().indexOf(term) > -1 ? '' : 'none';
     });
-    // Table mode
+    // Table mode — search all cells in row
     document.querySelectorAll('.clients-table tr[data-client-id]').forEach(function(row) {
-      var name = (row.querySelector('td:first-child') || {}).textContent || '';
-      row.style.display = name.toLowerCase().indexOf(term) > -1 ? '' : 'none';
+      var text = row.textContent || '';
+      row.style.display = text.toLowerCase().indexOf(term) > -1 ? '' : 'none';
     });
   }
 
@@ -403,17 +468,88 @@ var Clients = (function() {
     });
   }
 
+  function _renderGroupTable(items, teamMap, editingMap, editorsMap) {
+    var html = '<div class="clients-table-wrap">' +
+      '<table class="clients-table">' +
+      '<thead><tr>' +
+        '<th>שם הזוג</th>' +
+        '<th class="col-date">תאריך אירוע</th>' +
+        '<th>צלם ראשי</th>' +
+        '<th>צלם שני</th>' +
+        '<th>יתרה</th>' +
+        '<th>שלב עריכה</th>' +
+        '<th class="col-editor">עורכת</th>' +
+      '</tr></thead><tbody>';
+
+    items.forEach(function(item) {
+      var lead = item.lead;
+      var balance = item.balance;
+      var couple = ((lead.groom_first_name || '') + ' & ' + (lead.bride_first_name || '')).trim();
+      var isActive = lead.id === _currentLeadId ? ' client-row-active' : '';
+
+      var balHtml, balClass;
+      if (balance > 1) {
+        balHtml = UI.formatCurrency(balance);
+        balClass = 'balance-vivid-owed';
+      } else if (balance < -1) {
+        balHtml = 'זיכוי ' + UI.formatCurrency(Math.abs(balance));
+        balClass = 'balance-vivid-credit';
+      } else {
+        balHtml = 'שולם ✓';
+        balClass = 'balance-vivid-zero';
+      }
+
+      var mainPh = (teamMap && lead.main_photographer_id) ? teamMap[lead.main_photographer_id] : null;
+      var secondPh = (teamMap && lead.second_photographer_id) ? teamMap[lead.second_photographer_id] : null;
+      var editingStage = editingMap[lead.id] || '';
+      var editorObj = (lead.editor_id && editorsMap[lead.editor_id]) ? editorsMap[lead.editor_id] : null;
+      var editorName = editorObj ? (editorObj.first_name || editorObj.name) : '-';
+
+      html += '<tr class="client-table-row' + isActive + '" data-client-id="' + UI.escapeHtml(lead.id) + '" onclick="navigateTo(\'clients/' + UI.escapeHtml(lead.id) + '\')">' +
+        '<td class="client-table-name">' + UI.escapeHtml(couple) + '</td>' +
+        '<td class="col-date">' + UI.formatDate(lead.event_date) + '</td>' +
+        '<td>' + _renderNamePill(mainPh ? (mainPh.first_name || mainPh.name) : '-', PHOTOGRAPHER_PILL_COLORS) + '</td>' +
+        '<td>' + _renderNamePill(secondPh ? (secondPh.first_name || secondPh.name) : '-', PHOTOGRAPHER_PILL_COLORS) + '</td>' +
+        '<td class="balance-cell ' + balClass + '">' + balHtml + '</td>' +
+        '<td>' + _renderEditingStagePill(editingStage) + '</td>' +
+        '<td class="col-editor">' + _renderNamePill(editorName, EDITOR_PILL_COLORS) + '</td>' +
+      '</tr>';
+    });
+
+    html += '</tbody></table></div>';
+    return html;
+  }
+
+  function toggleSection(key) {
+    _collapsedClientSections[key] = !_collapsedClientSections[key];
+    // Re-render without refetching
+    var leads = AppState.get('clientLeads');
+    var eventLogs = AppState.get('clientEventLogs');
+    var teamMap = AppState.get('clientTeamMap');
+    var editingMap = AppState.get('clientEditingMap') || {};
+    var editorsMap = AppState.get('clientEditorsMap') || {};
+    if (!leads) return;
+    var leadIds = leads.map(function(l) { return l.id; });
+    API.fetchAllClientTransactions(leadIds).then(function(paidByLead) {
+      var container = document.getElementById('clients-view');
+      if (container) {
+        _renderClientsList(container, leads, paidByLead, eventLogs || {}, teamMap || {}, editingMap, editorsMap);
+        if (_currentLeadId) _highlightSelected(_currentLeadId);
+      }
+    });
+  }
+
   function _renderClientsTableInner(leads, paidByLead, eventLogs, teamMap, editingMap, editorsMap) {
     var html = '<div class="clients-table-wrap">' +
       '<table class="clients-table">' +
       '<thead><tr>' +
         '<th>שם הזוג</th>' +
-        '<th>תאריך אירוע</th>' +
+        '<th class="col-date">תאריך אירוע</th>' +
         '<th>צלם ראשי</th>' +
         '<th>צלם שני</th>' +
         '<th>יתרה</th>' +
         '<th>שלב עריכה</th>' +
-        '<th>עורכת</th>' +
+        '<th class="col-editor">עורכת</th>' +
       '</tr></thead><tbody>';
 
     var visibleCount = 0;
@@ -429,12 +565,12 @@ var Clients = (function() {
       var couple = ((lead.groom_first_name || '') + ' & ' + (lead.bride_first_name || '')).trim();
       var isActive = lead.id === _currentLeadId ? ' client-row-active' : '';
 
-      // Balance vivid
+      // Balance vivid (threshold: treat ±1 ₪ as zero to avoid rounding artifacts)
       var balHtml, balClass;
-      if (balance > 0) {
+      if (balance > 1) {
         balHtml = UI.formatCurrency(balance);
         balClass = 'balance-vivid-owed';
-      } else if (balance < 0) {
+      } else if (balance < -1) {
         balHtml = 'זיכוי ' + UI.formatCurrency(Math.abs(balance));
         balClass = 'balance-vivid-credit';
       } else {
@@ -453,12 +589,12 @@ var Clients = (function() {
 
       html += '<tr class="client-table-row' + isActive + '" data-client-id="' + UI.escapeHtml(lead.id) + '" onclick="navigateTo(\'clients/' + UI.escapeHtml(lead.id) + '\')">' +
         '<td class="client-table-name">' + UI.escapeHtml(couple) + '</td>' +
-        '<td>' + UI.formatDate(lead.event_date) + '</td>' +
-        '<td>' + UI.escapeHtml(mainPh ? (mainPh.first_name || mainPh.name) : '-') + '</td>' +
-        '<td>' + UI.escapeHtml(secondPh ? (secondPh.first_name || secondPh.name) : '-') + '</td>' +
+        '<td class="col-date">' + UI.formatDate(lead.event_date) + '</td>' +
+        '<td>' + _renderNamePill(mainPh ? (mainPh.first_name || mainPh.name) : '-', PHOTOGRAPHER_PILL_COLORS) + '</td>' +
+        '<td>' + _renderNamePill(secondPh ? (secondPh.first_name || secondPh.name) : '-', PHOTOGRAPHER_PILL_COLORS) + '</td>' +
         '<td class="balance-cell ' + balClass + '">' + balHtml + '</td>' +
         '<td>' + _renderEditingStagePill(editingStage) + '</td>' +
-        '<td>' + UI.escapeHtml(editorName) + '</td>' +
+        '<td class="col-editor">' + _renderNamePill(editorName, EDITOR_PILL_COLORS) + '</td>' +
       '</tr>';
       visibleCount++;
     }
@@ -795,8 +931,8 @@ var Clients = (function() {
     if (oldRow) {
       var balCell = oldRow.querySelector('.balance-cell');
       if (balCell) {
-        balCell.className = 'balance-cell ' + (balance > 0 ? 'balance-vivid-owed' : balance < 0 ? 'balance-vivid-credit' : 'balance-vivid-zero');
-        balCell.textContent = balance > 0 ? UI.formatCurrency(balance) : balance < 0 ? 'זיכוי ' + UI.formatCurrency(Math.abs(balance)) : 'שולם ✓';
+        balCell.className = 'balance-cell ' + (balance > 1 ? 'balance-vivid-owed' : balance < -1 ? 'balance-vivid-credit' : 'balance-vivid-zero');
+        balCell.textContent = balance > 1 ? UI.formatCurrency(balance) : balance < -1 ? 'זיכוי ' + UI.formatCurrency(Math.abs(balance)) : 'שולם ✓';
       }
     }
 
@@ -1060,6 +1196,7 @@ var Clients = (function() {
     filterList: filterList,
     filterByStatus: filterByStatus,
     setViewMode: setViewMode,
+    toggleSection: toggleSection,
     openAddPayment: openAddPayment,
     editPayment: editPayment,
     editLeadField: editLeadField,

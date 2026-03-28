@@ -1967,7 +1967,7 @@ input, select, textarea {
   }
 
   .main-content {
-    margin-right: 0;
+    margin-right: 0 !important;
     padding-bottom: var(--mobile-nav-height);
     overflow-x: hidden;
     max-width: 100vw;
@@ -2215,13 +2215,13 @@ input, select, textarea {
   .editors-list,
   .clients-list,
   .photographers-list {
-    padding: 0 8px 8px;
+    padding: 0 0 8px;
     gap: 6px;
   }
 
   /* List header */
   .list-header {
-    padding: 12px 12px 8px;
+    padding: 12px 14px 8px;
   }
 
   .list-title {
@@ -2237,12 +2237,14 @@ input, select, textarea {
     width: 100%;
   }
 
-  /* Cards in list: smaller padding */
+  /* Cards in list: flush edges on mobile */
   .editor-card,
   .client-card,
   .photographer-card {
-    padding: 10px 12px;
-    border-radius: var(--radius-sm);
+    padding: 10px 14px;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
   }
 
   .editor-card-name,
@@ -3627,6 +3629,14 @@ input.form-input-error + .cs-dropdown .cs-dropdown-btn {
 .events-section-card .responsive-table-wrap { margin: 0; }
 .events-section-card .data-table { border-radius: 0; }
 
+/* Client section vivid colors */
+.section-client-credit  { background: #d1fae5; color: #059669; }
+.section-client-owed    { background: #fee2e2; color: #dc2626; }
+.section-client-settled { background: #ecfdf5; color: #10b981; }
+.events-section-card .clients-table-wrap { margin: 0; }
+.events-section-card .clients-table { border-radius: 0; }
+.events-section-card .clients-list { padding: 0; }
+
 /* ---- Note cell truncation + popup ---- */
 .note-truncated { cursor: pointer; color: var(--text-muted); text-decoration: underline dotted; }
 .note-popup-overlay {
@@ -3716,11 +3726,14 @@ input.form-input-error + .cs-dropdown .cs-dropdown-btn {
   font-size: 11.5px; font-weight: 600; white-space: nowrap;
 }
 
-/* Mobile — full-width table, smaller text */
+/* Mobile — full-width table, smaller text, horizontal scroll */
 @media (max-width: 768px) {
-  .clients-table { font-size: 12px; min-width: 560px; }
-  .clients-table thead th, .clients-table tbody td { padding: 8px 9px; }
-  .editing-stage-pill { font-size: 10.5px; padding: 2px 7px; }
+  .clients-table { font-size: 11.5px; min-width: 600px; }
+  .clients-table thead th, .clients-table tbody td { padding: 7px 5px; }
+  .clients-table thead th { font-size: 10px; }
+  .editing-stage-pill { font-size: 10px; padding: 2px 6px; }
+  .clients-table-wrap { margin: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  #clients-split.clients-table-mode .list-header { padding: 12px 14px 8px; }
 }
 
 /* ---- Clients table mode — full width + drawer ---- */
