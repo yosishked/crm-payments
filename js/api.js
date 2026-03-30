@@ -166,12 +166,21 @@ var API = (function() {
       return null;
     }
 
+    if (typeof AuditLog !== 'undefined' && data) {
+      AuditLog.logInsert('crm_editor_transactions', data, null);
+    }
     UI.toast('תנועה נוצרה', 'success');
     return data;
   }
 
   async function deleteEditorTransaction(id) {
     if (typeof Realtime !== 'undefined' && Realtime.markLocalSave) Realtime.markLocalSave();
+
+    // Fetch old record for audit before delete
+    var _auditOld = null;
+    if (typeof AuditLog !== 'undefined') {
+      _auditOld = await AuditLog.fetchOldValues('crm_editor_transactions', id);
+    }
 
     var { data: offsets } = await supabase
       .from('crm_editor_offsets')
@@ -204,6 +213,9 @@ var API = (function() {
         return false;
       }
 
+      if (typeof AuditLog !== 'undefined' && _auditOld) {
+        AuditLog.logDelete('crm_editor_transactions', id, _auditOld, 'קיזוז');
+      }
       UI.toast('קיזוז נמחק (2 תנועות)', 'success');
       return true;
     }
@@ -219,12 +231,19 @@ var API = (function() {
       return false;
     }
 
+    if (typeof AuditLog !== 'undefined' && _auditOld) {
+      AuditLog.logDelete('crm_editor_transactions', id, _auditOld, null);
+    }
     UI.toast('תנועה נמחקה', 'success');
     return true;
   }
 
   async function updateEditorTransaction(id, updates) {
     if (typeof Realtime !== 'undefined' && Realtime.markLocalSave) Realtime.markLocalSave();
+    var _auditOld = null;
+    if (typeof AuditLog !== 'undefined') {
+      _auditOld = await AuditLog.fetchOldValues('crm_editor_transactions', id);
+    }
     var { data, error } = await supabase
       .from('crm_editor_transactions')
       .update(updates)
@@ -238,6 +257,9 @@ var API = (function() {
       return null;
     }
 
+    if (typeof AuditLog !== 'undefined' && _auditOld) {
+      AuditLog.logUpdate('crm_editor_transactions', id, _auditOld, data, null);
+    }
     UI.toast('תנועה עודכנה', 'success');
     return data;
   }
@@ -303,6 +325,9 @@ var API = (function() {
         .eq('id', offsetData.id);
     }
 
+    if (typeof AuditLog !== 'undefined' && offsetData) {
+      AuditLog.logInsert('crm_editor_offsets', offsetData, null);
+    }
     UI.toast('קיזוז נוצר בהצלחה', 'success');
     return offsetData;
   }
@@ -463,12 +488,19 @@ var API = (function() {
       return null;
     }
 
+    if (typeof AuditLog !== 'undefined' && data) {
+      AuditLog.logInsert('crm_client_transactions', data, null);
+    }
     UI.toast('תשלום נוצר', 'success');
     invalidateCache('client_leads');
     return data;
   }
 
   async function updateClientTransaction(id, updates) {
+    var _auditOld = null;
+    if (typeof AuditLog !== 'undefined') {
+      _auditOld = await AuditLog.fetchOldValues('crm_client_transactions', id);
+    }
     var { data, error } = await supabase
       .from('crm_client_transactions')
       .update(updates)
@@ -482,12 +514,19 @@ var API = (function() {
       return null;
     }
 
+    if (typeof AuditLog !== 'undefined' && _auditOld) {
+      AuditLog.logUpdate('crm_client_transactions', id, _auditOld, data, null);
+    }
     UI.toast('תשלום עודכן', 'success');
     return data;
   }
 
   async function deleteClientTransaction(id) {
     if (typeof Realtime !== 'undefined' && Realtime.markLocalSave) Realtime.markLocalSave();
+    var _auditOld = null;
+    if (typeof AuditLog !== 'undefined') {
+      _auditOld = await AuditLog.fetchOldValues('crm_client_transactions', id);
+    }
     var { error } = await supabase
       .from('crm_client_transactions')
       .delete()
@@ -499,6 +538,9 @@ var API = (function() {
       return false;
     }
 
+    if (typeof AuditLog !== 'undefined' && _auditOld) {
+      AuditLog.logDelete('crm_client_transactions', id, _auditOld, null);
+    }
     UI.toast('תשלום נמחק', 'success');
     return true;
   }
@@ -555,15 +597,27 @@ var API = (function() {
   }
 
   async function updateLeadPhotographerCost(leadId, costField, value) {
+    var _auditOld = null;
+    if (typeof AuditLog !== 'undefined') {
+      var { data: oldRec } = await supabase.from('crm_leads').select(costField).eq('id', leadId).single();
+      if (oldRec) _auditOld = oldRec;
+    }
     var updates = {};
     updates[costField] = value;
     var { error } = await supabase.from('crm_leads').update(updates).eq('id', leadId);
     if (error) { console.error('Error updating lead cost:', error); UI.toast('שגיאה בעדכון עלות', 'danger'); return false; }
+    if (typeof AuditLog !== 'undefined' && _auditOld) {
+      AuditLog.logUpdate('crm_leads', leadId, _auditOld, updates, null);
+    }
     invalidateCache('photographer_leads');
     return true;
   }
 
   async function updateEventLogPayment(logId, updates) {
+    var _auditOld = null;
+    if (typeof AuditLog !== 'undefined') {
+      _auditOld = await AuditLog.fetchOldValues('crm_event_logs', logId);
+    }
     var { data, error } = await supabase
       .from('crm_event_logs')
       .update(updates)
@@ -577,6 +631,9 @@ var API = (function() {
       return null;
     }
 
+    if (typeof AuditLog !== 'undefined' && _auditOld) {
+      AuditLog.logUpdate('crm_event_logs', logId, _auditOld, data, null);
+    }
     UI.toast('תשלום עודכן', 'success');
     invalidateCache('photographer_leads');
     return data;
@@ -588,6 +645,10 @@ var API = (function() {
 
   async function updateRecord(table, id, updates) {
     if (typeof Realtime !== 'undefined' && Realtime.markLocalSave) Realtime.markLocalSave();
+    var _auditOld = null;
+    if (typeof AuditLog !== 'undefined') {
+      _auditOld = await AuditLog.fetchOldValues(table, id);
+    }
     var { data, error } = await supabase
       .from(table)
       .update(updates)
@@ -601,6 +662,9 @@ var API = (function() {
       return null;
     }
 
+    if (typeof AuditLog !== 'undefined' && _auditOld) {
+      AuditLog.logUpdate(table, id, _auditOld, data, null);
+    }
     return data;
   }
 

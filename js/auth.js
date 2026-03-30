@@ -81,6 +81,8 @@ supabase.auth.onAuthStateChange(async function(event, session) {
     document.getElementById('app-shell').hidden = false;
     _hideAccessDenied();
     _updateUserUI(currentUser);
+    var auditBtn = document.getElementById('nav-audit-history');
+    if (auditBtn) auditBtn.style.display = isAdmin() ? '' : 'none';
     Realtime.init();
     window.handleRoute();
   } else {
@@ -179,6 +181,8 @@ function _hideAccessDenied() {
     document.getElementById('app-shell').hidden = false;
     _hideAccessDenied();
     _updateUserUI(currentUser);
+    var auditBtn2 = document.getElementById('nav-audit-history');
+    if (auditBtn2) auditBtn2.style.display = isAdmin() ? '' : 'none';
     Realtime.init();
     window.handleRoute();
   }
