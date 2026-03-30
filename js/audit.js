@@ -344,38 +344,52 @@ var AuditLog = (function() {
       });
     }
 
-    // INSERT - show new values
+    // INSERT - expandable
     if (entry.action === 'INSERT' && entry.new_values) {
       var keys = Object.keys(entry.new_values).filter(function(k) { return k !== 'id' && k !== 'created_at' && k !== 'updated_at'; });
-      if (keys.length > 5) {
-        card.appendChild(_el('div', 'font-size:13px;color:#6b7280;padding:4px 0;', 'נוצרה רשומה חדשה (' + keys.length + ' שדות)'));
-      } else {
-        keys.forEach(function(key) {
-          var fieldLabel = FIELD_LABELS[key] || key;
-          var row = _el('div', 'font-size:13px;color:#374151;padding:2px 0;');
-          row.appendChild(_el('span', 'color:#6b7280;', fieldLabel + ': '));
-          row.appendChild(document.createTextNode(_formatValue(entry.new_values[key])));
-          card.appendChild(row);
-        });
-      }
+      var toggleBtn = _el('div', 'font-size:13px;color:#3b82f6;padding:4px 0;cursor:pointer;user-select:none;', 'נוצרה רשומה חדשה (' + keys.length + ' שדות) \u25BC');
+      var detailsDiv = _el('div', 'display:none;padding:4px 0;border-top:1px solid #e5e7eb;margin-top:4px;');
+      keys.forEach(function(key) {
+        var fieldLabel = FIELD_LABELS[key] || key;
+        var val = entry.new_values[key];
+        if (val === null || val === undefined || val === '') return;
+        var row = _el('div', 'font-size:13px;color:#374151;padding:2px 0;display:flex;align-items:center;gap:6px;flex-wrap:wrap;');
+        row.appendChild(_el('span', 'color:#6b7280;min-width:100px;', fieldLabel + ':'));
+        row.appendChild(_el('span', 'background:#dcfce7;padding:1px 6px;border-radius:3px;color:#166534;', _formatValue(val)));
+        row.appendChild(_createCopyBtn(val));
+        detailsDiv.appendChild(row);
+      });
+      toggleBtn.addEventListener('click', function() {
+        var isOpen = detailsDiv.style.display !== 'none';
+        detailsDiv.style.display = isOpen ? 'none' : 'block';
+        toggleBtn.textContent = 'נוצרה רשומה חדשה (' + keys.length + ' שדות) ' + (isOpen ? '\u25BC' : '\u25B2');
+      });
+      card.appendChild(toggleBtn);
+      card.appendChild(detailsDiv);
     }
 
-    // DELETE - show old values summary
+    // DELETE - expandable
     if (entry.action === 'DELETE' && entry.old_values) {
       var keys = Object.keys(entry.old_values).filter(function(k) { return k !== 'id' && k !== 'created_at' && k !== 'updated_at'; });
-      card.appendChild(_el('div', 'font-size:13px;color:#991b1b;padding:4px 0;', 'נמחקה רשומה (' + keys.length + ' שדות)'));
-      keys.slice(0, 5).forEach(function(key) {
+      var toggleBtn = _el('div', 'font-size:13px;color:#ef4444;padding:4px 0;cursor:pointer;user-select:none;', 'נמחקה רשומה (' + keys.length + ' שדות) \u25BC');
+      var detailsDiv = _el('div', 'display:none;padding:4px 0;border-top:1px solid #e5e7eb;margin-top:4px;');
+      keys.forEach(function(key) {
         var fieldLabel = FIELD_LABELS[key] || key;
-        var row = _el('div', 'font-size:13px;color:#6b7280;padding:2px 0;');
-        row.appendChild(_el('span', '', fieldLabel + ': '));
-        row.appendChild(document.createTextNode(_formatValue(entry.old_values[key])));
-        row.appendChild(document.createTextNode(' '));
-        row.appendChild(_createCopyBtn(entry.old_values[key]));
-        card.appendChild(row);
+        var val = entry.old_values[key];
+        if (val === null || val === undefined || val === '') return;
+        var row = _el('div', 'font-size:13px;color:#6b7280;padding:2px 0;display:flex;align-items:center;gap:6px;flex-wrap:wrap;');
+        row.appendChild(_el('span', 'min-width:100px;', fieldLabel + ':'));
+        row.appendChild(_el('span', 'background:#fee2e2;padding:1px 6px;border-radius:3px;color:#991b1b;', _formatValue(val)));
+        row.appendChild(_createCopyBtn(val));
+        detailsDiv.appendChild(row);
       });
-      if (keys.length > 5) {
-        card.appendChild(_el('div', 'font-size:12px;color:#9ca3af;', 'ועוד ' + (keys.length - 5) + ' שדות...'));
-      }
+      toggleBtn.addEventListener('click', function() {
+        var isOpen = detailsDiv.style.display !== 'none';
+        detailsDiv.style.display = isOpen ? 'none' : 'block';
+        toggleBtn.textContent = 'נמחקה רשומה (' + keys.length + ' שדות) ' + (isOpen ? '\u25BC' : '\u25B2');
+      });
+      card.appendChild(toggleBtn);
+      card.appendChild(detailsDiv);
     }
 
     return card;
