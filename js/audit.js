@@ -114,7 +114,9 @@ var AuditLog = (function() {
     crm_editor_transactions: 'תנועות עורכים',
     crm_editor_offsets: 'קיזוזים',
     crm_event_logs: 'יומני אירוע',
-    crm_editing_timers: 'טיימרים'
+    crm_editing_timers: 'טיימרים',
+    crm_pre_event_forms: 'שאלוני לפני אירוע',
+    crm_event_logs: 'יומני אירוע'
   };
 
   // ---- Action labels ----
