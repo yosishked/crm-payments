@@ -19,6 +19,7 @@ crm-payments/
 │   ├── form-helpers.js     ← תשתית CRUD (זהה ל-crm-leads)
 │   ├── router.js           ← ניתוב (clients, editors, photographers + /:id)
 │   ├── api.js              ← שאילתות Supabase לתשלומים
+│   ├── audit.js            ← מערכת audit log - היסטוריית שינויים (משותף לכל מודולי CRM)
 │   ├── clients.js          ← תצוגת לקוחות + תשלומים + פירוט מחיר
 │   ├── editors.js          ← תצוגת עורכות + תשלומים + קיזוזים
 │   └── photographers.js    ← תצוגת צלמים (planned)
@@ -33,7 +34,13 @@ crm-payments/
 - `crm_editor_transactions` (קריאה + כתיבה) — תנועות עורכות
 - `crm_editor_offsets` (קריאה + כתיבה) — קיזוזים בין אירועים
 - `crm_event_logs` (קריאה) — יומני אירוע (שעות נוספות, extras)
+- `crm_editing` (קריאה) — שלב עריכה + editing_style_two_cameras (לתוספת 500₪)
 - `crm_users` (קריאה) — הרשאות
+
+## Views
+- `v_editor_lead_balances` — יתרה לכל עורכת-ליד
+- `v_editor_total_balances` — סה"כ יתרה לכל עורכת
+- `v_client_paid` — סיכום תשלומים לכל ליד (SUM+GROUP BY מ-crm_client_transactions)
 
 ## סוגי תנועות (transaction_type)
 - `עלות עריכה` — עלות קבועה לאירוע
@@ -61,10 +68,6 @@ crm-payments/
 ## Trigger — crm_team.balance
 Trigger על crm_editor_transactions מעדכן אוטומטית את crm_team.balance
 
-## Views
-- `v_editor_lead_balances` — יתרה לכל עורכת-ליד
-- `v_editor_total_balances` — סה"כ יתרה לכל עורכת
-
 ## אינטגרציה עם crm-leads
 - **בחירת עורכת**: בטאב 2 (אירוע וחבילה) ב-crm-leads יש dropdown בחירת עורכת (`editor_id` FK → crm_team)
 - **יצירת תנועה אוטומטית**: כשנבחרת עורכת — נוצרת תנועת "עלות עריכה" אוטומטית עם הסכום מ-`crm_leads.editing_cost`
@@ -75,16 +78,20 @@ Trigger על crm_editor_transactions מעדכן אוטומטית את crm_team.b
 - מאזין ל-4 טבלאות: `crm_editor_transactions`, `crm_client_transactions`, `crm_event_logs`, `crm_leads`
 - כשיש שינוי: מרענן את התצוגה הרלוונטית (עורכות/לקוחות)
 - cooldown של 3 שניות אחרי שמירה מקומית (למנוע self-trigger)
+- **חשוב**: `Realtime.markLocalSave()` נקרא **אחרי** השמירה (לא לפני!) — אחרת ה-cooldown פג לפני שהשמירה הסתיימה
 - לא מפריע לעריכה: מזהה כשהמשתמש באמצע עריכה ומדלג
-- `Realtime.markLocalSave()` נקרא לפני כל create/update/delete
 - **debounce 500ms** על refresh + `_isRefreshing` guard למניעת טעינות כפולות
-- `_loadClientDetail(leadId, silent)` — פרמטר `silent` מדלג על ספינר (לרענון חלק אחרי שמירה)
+- **`_isSoftRefreshing` guard** על `_softRefreshClientDetail` — מונע רענונים מקבילים
+- אחרי שמירה: קריאה ישירה ל-`_softRefreshClientDetail(leadId)` (לא דרך timer)
+- `_loadClientDetail(leadId, silent)` — פרמטר `silent` מדלג על ספינר
+- **visibilitychange הוסר** — Realtime מטפל בעדכונים, לא צריך רענון בחזרה לטאב
+- **לא מרעננים רשימה** כשפותחים/סוגרים פרטים — בדיקה אם כבר יש תוכן מרונדר
 
 ## הגנות נגד קפיאת דף
 - **form-helpers.js**: `_initColorSelects` מאזין על ה-overlay (לא document) — listener נמחק כשהמודל נסגר
 - **editors.js**: version counter (`_detailVersion`, `_listVersion`) — טעינה ישנה מבטלת את עצמה אם חדשה התחילה
 - **auth.js**: `SIGNED_IN` כש-כבר מחובר עם הרשאות → מדלג (מונע re-init מיותר בחזרה מטאב)
-- **router.js**: debounce על `handleRoute` (hash חדש=מיידי, אותו hash=300ms). `visibilitychange` listener לרענון נקי בחזרה מטאב
+- **router.js**: debounce על `handleRoute` (hash חדש=מיידי, אותו hash=300ms)
 
 ## תנועות לקוח לעורכת (linked transactions)
 - כשלקוח משלם ישירות לעורכת, נוצרות 2 תנועות מקושרות:
@@ -95,24 +102,28 @@ Trigger על crm_editor_transactions מעדכן אוטומטית את crm_team.b
 - פועל גם מצד הלקוחות וגם מצד העורכות
 
 ## מסך לקוחות (clients.js)
-- רשימת לידים עם פירוט תשלומים בסיידבר
-- סינון: הכל / לא שולם / שולם
-- חיפוש חופשי
-- באדג'ים צבעוניים לצלמים (כחול, אדום, צהוב, טורקיז)
-- פירוט מחיר משוקלל: package_price + second_photographer + package_extras - discount + event_extras × מע"מ + תוספת "2 האופציות"
-- **מע"מ דינמי**: 17% לפני 01.01.2025, 18% אחרי — `_getVatRate(lead)` לפי event_date
-- **תוספת "2 האופציות"**: 500₪ כולל מע"מ כש-`editing_style_two_cameras === '2 האופציות'` ב-crm_editing (נשלף ב-`fetchClientEditingData`)
-- **v_client_paid View**: סיכום תשלומים מהDB (SUM+GROUP BY) — מחליף שליפת כל התנועות, ללא pagination
-
-## מסך לקוחות — פילטרים ומיון
-- **פילטרים**: צלם ראשי (4), צלם שני (כל הצוות), שלב עריכה (multi-select) — dropdowns צבעוניים
+- רשימת לידים עם פירוט תשלומים בסיידבר (drawer בטבלה, split במובייל)
+- **קטגוריות מתקפלות**: זיכוי (ירוק), חוב (אדום), שולם — עם סכום כולל + ספירה
+- **פילטרים צבעוניים** (dropdowns):
+  - צלם ראשי: יוסי/אריאל/שלומי/יוסף — פילים צבעוניים
+  - צלם שני: כל הצוות — פילים צבעוניים (ידועים בצבעים שלהם, שאר אוטומטי)
+  - שלב עריכה: multi-select checkboxes עם פילים צבעוניים (17 שלבים)
 - **מיון**: לחיצה על כותרת עמודה (▲/▼) — שם, תאריך, צלם, יתרה, שלב, עורכת
-- **חיפוש חופשי**: על כל השדות (שם, תאריך, צלם, עורכת)
-- **שמירת מצב**: פילטרים + מצב פתוח/סגור של קטגוריות + view mode — הכל ב-localStorage
+- **חיפוש חופשי**: על כל השדות (שם, תאריך, צלם, עורכת, שלב)
 - **header sticky**: חיפוש + פילטרים קבועים למעלה בגלילה
-- **קטגוריות מתקפלות**: זיכוי (ירוק), חוב (אדום), שולם — כמו עמוד עורכות
+- **שמירת מצב ב-localStorage**: פילטרים, מצב פתוח/סגור של קטגוריות, view mode (cards/table)
+- **פרוגרס בר** בטבלה: עמודת "תשלום" עם progress bar קומפקטי (paid/total)
+- באדג'ים צבעוניים: צלמים (PHOTOGRAPHER_PILL_COLORS), עורכות (EDITOR_PILL_COLORS), שלבי עריכה (EDITING_STAGE_STYLES — 17 שלבים)
 - שדות עריכים: package_extras, discount (עריכה ישירה מהתשלומים)
 - מקורות תנועות: CRM, יומן אירוע, לקוח לעורכת
+
+## חישוב מחיר ללקוח
+- פירוט: package_price + second_photographer + package_extras - discount + event_extras
+- **מע"מ דינמי**: 17% לפני 01.01.2025, 18% אחרי — `_getVatRate(lead)` לפי `event_date`
+- **תוספת "2 האופציות"**: 500₪ **כולל מע"מ** כש-`editing_style_two_cameras === '2 האופציות'` ב-crm_editing
+- **סף יתרה**: ±1₪ — יתרות קטנות מעיגול מע"מ מוצגות כ"שולם ✓"
+- **v_client_paid View**: סיכום תשלומים מהDB (SUM+GROUP BY) — מחליף שליפת כל התנועות
+- **מע"מ חל רק על מחיר ללקוח** (לא על עלויות פנימיות/צוות)
 
 ## Supabase .in() באג
 - `.in('lead_id', leadIds)` עם UUIDs לפעמים מחזיר תוצאות ריקות בשקט
