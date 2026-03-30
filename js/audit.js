@@ -528,6 +528,116 @@ var AuditLog = (function() {
     footerEl.style.display = data.length >= _historyPageSize ? 'block' : 'none';
   }
 
+  // ---- Record-specific history ----
+  // Shows history for a specific record AND all related records (e.g. lead + its contracts + transactions)
+  var _recordIds = null;
+
+  async function showRecordHistory(recordId, label, relatedTables) {
+    if (typeof isAdmin === 'function' && !isAdmin()) {
+      UI.toast('אין הרשאה לצפות בהיסטוריה', 'danger');
+      return;
+    }
+
+    _historyPage = 0;
+    _historyFilters = { table: '', dateRange: '365', search: '' };
+    _recordIds = [recordId];
+
+    // Find related records (contracts, transactions, etc. linked to this lead)
+    if (relatedTables && relatedTables.length > 0) {
+      for (var i = 0; i < relatedTables.length; i++) {
+        var rt = relatedTables[i];
+        var { data: related } = await supabase
+          .from(rt.table)
+          .select('id')
+          .eq(rt.foreignKey, recordId);
+        if (related) {
+          related.forEach(function(r) { _recordIds.push(r.id); });
+        }
+      }
+    }
+
+    // Build overlay
+    var overlay = _el('div', 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px;');
+    overlay.id = 'audit-history-overlay';
+
+    var modal = _el('div', 'background:#fff;border-radius:12px;width:100%;max-width:900px;max-height:90vh;display:flex;flex-direction:column;direction:rtl;font-family:Rubik,sans-serif;box-shadow:0 20px 60px rgba(0,0,0,0.3);');
+
+    // Header
+    var header = _el('div', 'padding:20px 24px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between;');
+    header.appendChild(_el('h2', 'margin:0;font-size:18px;color:#1f2937;', 'היסטוריה: ' + (label || '')));
+    var closeBtn = _el('button', 'background:none;border:none;cursor:pointer;font-size:24px;color:#9ca3af;padding:0;line-height:1;', '\u00d7');
+    closeBtn.addEventListener('click', function() { overlay.remove(); });
+    header.appendChild(closeBtn);
+
+    // Content
+    var content = _el('div', 'flex:1;overflow-y:auto;padding:16px 24px;');
+    content.appendChild(_el('div', 'text-align:center;padding:40px;color:#9ca3af;', 'טוען...'));
+
+    // Footer
+    var footer = _el('div', 'padding:12px 24px;border-top:1px solid #e5e7eb;text-align:center;display:none;');
+    var loadMoreBtn = _el('button', 'background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;padding:8px 24px;cursor:pointer;font-family:inherit;font-size:13px;color:#374151;', 'טען עוד');
+    footer.appendChild(loadMoreBtn);
+
+    modal.appendChild(header);
+    modal.appendChild(content);
+    modal.appendChild(footer);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    overlay.addEventListener('click', function(e) {
+      if (e.target === overlay) overlay.remove();
+    });
+
+    loadMoreBtn.addEventListener('click', function() {
+      _historyPage++;
+      _loadRecordHistory(content, footer, true);
+    });
+
+    _loadRecordHistory(content, footer, false);
+  }
+
+  async function _loadRecordHistory(contentEl, footerEl, append) {
+    if (!append) {
+      contentEl.textContent = '';
+      contentEl.appendChild(_el('div', 'text-align:center;padding:40px;color:#9ca3af;', 'טוען...'));
+    }
+
+    var query = supabase
+      .from('crm_audit_log')
+      .select('*')
+      .in('record_id', _recordIds)
+      .order('created_at', { ascending: false })
+      .range(_historyPage * _historyPageSize, (_historyPage + 1) * _historyPageSize - 1);
+
+    var { data, error } = await query;
+
+    if (error) {
+      contentEl.textContent = '';
+      contentEl.appendChild(_el('div', 'text-align:center;padding:40px;color:#ef4444;', 'שגיאה בטעינת היסטוריה'));
+      console.error('Audit record history error:', error);
+      return;
+    }
+
+    if (!data || data.length === 0) {
+      if (!append) {
+        contentEl.textContent = '';
+        contentEl.appendChild(_el('div', 'text-align:center;padding:40px;color:#9ca3af;', 'אין שינויים להצגה'));
+      }
+      footerEl.style.display = 'none';
+      return;
+    }
+
+    if (!append) {
+      contentEl.textContent = '';
+    }
+
+    data.forEach(function(entry) {
+      contentEl.appendChild(_renderEntryDOM(entry));
+    });
+
+    footerEl.style.display = data.length >= _historyPageSize ? 'block' : 'none';
+  }
+
   // ---- Public API ----
   return {
     logInsert: logInsert,
@@ -535,6 +645,7 @@ var AuditLog = (function() {
     logDelete: logDelete,
     fetchOldValues: fetchOldValues,
     showHistory: showHistory,
+    showRecordHistory: showRecordHistory,
     FIELD_LABELS: FIELD_LABELS
   };
 
