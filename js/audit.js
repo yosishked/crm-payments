@@ -170,6 +170,27 @@ var AuditLog = (function() {
     };
   }
 
+  // ---- Auto-detect couple name from record data ----
+  function _autoLabel(entry) {
+    if (entry.label) return entry.label;
+    // Try to extract couple name from full record, then fall back to old/new values
+    var data = entry._fullRecord || entry.newValues || entry.oldValues;
+    if (!data) return null;
+    // crm_leads pattern
+    if (data.groom_first_name || data.bride_first_name) {
+      var g = (data.groom_first_name || '');
+      var b = (data.bride_first_name || '');
+      if (g || b) return (g + ' & ' + b).trim();
+    }
+    // crm_editing pattern
+    if (data.groom_name || data.bride_name) {
+      var g2 = (data.groom_name || '');
+      var b2 = (data.bride_name || '');
+      if (g2 || b2) return (g2 + ' & ' + b2).trim();
+    }
+    return null;
+  }
+
   // ---- Write audit log entry (fire-and-forget) ----
   function _writeLog(entry) {
     if (typeof currentUser === 'undefined' || !currentUser) return;
@@ -184,7 +205,7 @@ var AuditLog = (function() {
       old_values: entry.oldValues || null,
       new_values: entry.newValues || null,
       changed_fields: entry.changedFields || null,
-      record_label: entry.label || null
+      record_label: _autoLabel(entry)
     };
 
     supabase.from('crm_audit_log').insert(record).then(function(res) {
@@ -218,7 +239,8 @@ var AuditLog = (function() {
       oldValues: diff.oldValues,
       newValues: diff.newValues,
       changedFields: diff.changedFields,
-      label: label || null
+      label: label || null,
+      _fullRecord: oldValues // for auto-label detection
     });
   }
 
